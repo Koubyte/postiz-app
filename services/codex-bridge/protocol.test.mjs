@@ -83,7 +83,7 @@ test('stream errors propagate to the SDK instead of succeeding silently', async 
 test('concurrency limit rejects excess work', async t => {
   let release, started;
   const start = new Promise(r => { started = r; });
-  const { client } = await fixture(t, { maxActive: 1, runner: async () => { started(); await new Promise(r => { release = r; }); return { output: output('ok') }; } });
+  const { client } = await fixture(t, { maxActive: 1, maxQueued: 0, runner: async () => { started(); await new Promise(r => { release = r; }); return { output: output('ok') }; } });
   const first = client.chat.completions.create({ model: 'codex', messages }).then(r => r);
   await start;
   await assert.rejects(client.chat.completions.create({ model: 'codex', messages }), e => e.status === 429);
@@ -120,4 +120,19 @@ test('images reject missing prompts, batches, URL responses, errors and non-imag
   for (const body of [{}, { prompt: 'x', n: 2 }, { prompt: 'x', response_format: 'url' }]) assert.throws(() => prepareImage(body));
   assert.throws(() => imageResponse({ status: 'failed', result: png }));
   assert.throws(() => imageResponse({ status: 'completed', result: Buffer.from('secret text').toString('base64') }));
+});
+
+
+test('queued calls run after a slot is released and can be cancelled', async () => {
+  const { createLimiter } = await import('./limiter.mjs');
+  const acquire = createLimiter(1, 2, 1000);
+  const release = await acquire();
+  const controller = new AbortController();
+  const cancelled = acquire(controller.signal);
+  const next = acquire();
+  controller.abort();
+  await assert.rejects(cancelled, /cancelled/);
+  release();
+  const releaseNext = await next; releaseNext();
+  const releaseLast = await acquire(); releaseLast();
 });

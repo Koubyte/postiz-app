@@ -4,10 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { BridgeError, prepare, streamChunks } from './protocol.mjs';
 import { runCodex } from './runner.mjs';
 import { prepareImage, runImage } from './images.mjs';
+import { createLimiter } from './limiter.mjs';
 
-export function createBridge({ token, runner = runCodex, imageRunner = runImage, maxActive = 2 } = {}) {
+export function createBridge({ token, runner = runCodex, imageRunner = runImage, maxActive = 2, maxQueued = 8 } = {}) {
   if (!token || token.length < 32) throw new Error('CODEX_BRIDGE_TOKEN must contain at least 32 characters.');
-  let active = 0;
+  const acquireText = createLimiter(maxActive, maxQueued);
+  const acquireImage = createLimiter(1, maxQueued);
   const expected = Buffer.from(`Bearer ${token}`);
   const server = createServer(async (req, res) => {
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -16,11 +18,10 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
     if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) return json(401, { error: { message: 'Unauthorized', type: 'authentication_error' } });
     const isImage = req.url === '/v1/images/generations';
     if (req.method !== 'POST' || (!isImage && req.url !== '/v1/chat/completions')) return json(404, { error: { message: 'Supported endpoints: chat/completions and images/generations.', type: 'unsupported_endpoint' } });
-    if (active >= maxActive) return json(429, { error: { message: 'Codex is busy. Please retry shortly.', type: 'rate_limit_error' } });
-    active++;
+
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-    let keepalive;
+    let keepalive, release;
     try {
       let size = 0, chunks = [];
       for await (const chunk of req) {
@@ -32,7 +33,9 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
       try { body = JSON.parse(Buffer.concat(chunks).toString()); }
       catch { throw new BridgeError(400, 'invalid_json', 'Invalid JSON request.'); }
       if (isImage) {
-        const result = await imageRunner({ prompt: prepareImage(body), signal: controller.signal });
+        const prompt = prepareImage(body);
+        release = await acquireImage(controller.signal);
+        const result = await imageRunner({ prompt, signal: controller.signal });
         if (!controller.signal.aborted) json(200, result);
         return;
       }
@@ -42,6 +45,7 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
         res.write(': generating\n\n');
         keepalive = setInterval(() => res.write(': waiting\n\n'), 10000);
       }
+      release = await acquireText(controller.signal);
       const result = await runner({ prompt: plan.prompt, schema: plan.schema, signal: controller.signal });
       if (controller.signal.aborted) return;
       const completion = plan.decode(result.output, result.usage);
@@ -55,7 +59,7 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
       // Do not log request content, generated text, subprocess output or credentials.
       if (res.headersSent) res.end(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`);
       else json(known ? error.status : 500, payload);
-    } finally { clearInterval(keepalive); active--; }
+    } finally { clearInterval(keepalive); release?.(); }
   });
   server.requestTimeout = 360000;
   server.headersTimeout = 15000;

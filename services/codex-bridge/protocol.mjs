@@ -10,6 +10,7 @@ const ajv = new Ajv({ strict: false, validateFormats: false, allErrors: false, a
 
 export function prepare(body) {
   if (!body || !Array.isArray(body.messages) || !body.messages.length) invalid('messages must be a non-empty array.');
+  if (body.functions !== undefined && !Array.isArray(body.functions)) invalid('functions must be an array.');
   if (body.stream !== undefined && typeof body.stream !== 'boolean') invalid('stream must be boolean.');
   const n = body.n ?? 1;
   if (!Number.isInteger(n) || n < 1 || n > 5) invalid('n must be between 1 and 5.');
