@@ -1,8 +1,10 @@
 import {
   createTextClient,
   textAIConfigured,
+  textClientOptions,
   usesCodex,
 } from '@gitroom/nestjs-libraries/openai/text-provider';
+import { createOpenAI } from '@ai-sdk/openai';
 import {
   Logger,
   Controller,
@@ -47,6 +49,20 @@ const copilotCors = () => ({
   credentials: !process.env.NOT_SECURED,
 });
 
+const createTextAdapter = () => {
+  const adapter = new OpenAIAdapter({
+    model: usesCodex() ? 'codex' : 'gpt-4.1',
+    openai: createTextClient(),
+    disableParallelToolCalls: usesCodex(),
+  });
+  // Copilot's newer agent path otherwise defaults to the Responses API.
+  if (usesCodex()) {
+    adapter.getLanguageModel = () =>
+      createOpenAI(textClientOptions()).chat('codex');
+  }
+  return adapter;
+};
+
 @Controller('/copilot')
 export class CopilotController {
   constructor(
@@ -65,11 +81,7 @@ export class CopilotController {
       endpoint: '/copilot/chat',
       cors: copilotCors(),
       runtime: new CopilotRuntime(),
-      serviceAdapter: new OpenAIAdapter({
-        model: usesCodex() ? 'codex' : 'gpt-4.1',
-        openai: createTextClient(),
-        disableParallelToolCalls: usesCodex(),
-      }),
+      serviceAdapter: createTextAdapter(),
     });
 
     return copilotRuntimeHandler(req, res);
@@ -111,11 +123,7 @@ export class CopilotController {
       endpoint: '/copilot/agent',
       cors: copilotCors(),
       runtime,
-      serviceAdapter: new OpenAIAdapter({
-        model: usesCodex() ? 'codex' : 'gpt-4.1',
-        openai: createTextClient(),
-        disableParallelToolCalls: usesCodex(),
-      }),
+      serviceAdapter: createTextAdapter(),
     });
 
     return copilotRuntimeHandler(req, res);
