@@ -193,6 +193,33 @@ services:
     configs:
     - source: temporal-dynamic
       target: /etc/temporal/config/dynamicconfig/development-sql.yaml
+  codex-bridge:
+    build:
+      context: ./services/codex-bridge
+    environment:
+      CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
+      CODEX_HOME: /home/node/.codex
+    volumes:
+    - codex-auth:/home/node/.codex
+    tmpfs:
+    - /tmp:size=256m,mode=1777
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    restart: unless-stopped
+    mem_limit: 1g
+    pids_limit: 128
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
 volumes:
   postgres-volume:
     external: false
@@ -206,6 +233,7 @@ volumes:
     external: false
   temporal-elasticsearch-data:
     external: false
+  codex-auth: {}
 configs:
   temporal-dynamic:
     content: "limit.maxIDLength:\n  - value: 255\n    constraints: {}\n"
