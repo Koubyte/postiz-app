@@ -99,6 +99,19 @@ text, schemas, tool streaming, errors, auth, cancellation, concurrency and PNG
 responses. They do not establish live OAuth or model availability. The Postiz
 Docker build separately checks the backend, orchestrator and frontend.
 
+After deployment and device login, run this inside the **Postiz** container
+to check the actual compiled provider with its installed LangChain and Mastra
+versions (this makes two small live requests and uses account quota):
+
+```sh
+cd /app
+node services/codex-bridge/consumers.smoke.cjs
+```
+
+LangChain must retain an upstream chat model label: a label containing `codex`
+can silently force its Responses API even when `useResponsesApi` is false.
+The bridge still selects the actual Codex model independently.
+
 References: [Codex authentication](https://learn.chatgpt.com/docs/auth),
 [noninteractive mode](https://learn.chatgpt.com/docs/non-interactive-mode),
 [app-server](https://learn.chatgpt.com/docs/app-server),

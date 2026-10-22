@@ -28,7 +28,9 @@ export function textModelOptions(defaultModel: string) {
   const { apiKey, ...configuration } = textClientOptions();
   return {
     apiKey,
-    model: usesCodex() ? 'codex' : defaultModel,
+    // LangChain treats model names containing "codex" as Responses-only,
+    // even with useResponsesApi=false. Keep the upstream compatibility label.
+    model: defaultModel,
     ...(usesCodex() ? { configuration, useResponsesApi: false } : {}),
   };
 }
