@@ -1,3 +1,4 @@
+import { textAIConfigured } from '@gitroom/nestjs-libraries/openai/text-provider';
 import { CloudflareStorage } from './cloudflare.storage';
 import { IUploadProvider } from './upload.interface';
 import { LocalStorage } from './local.storage';
@@ -61,7 +62,7 @@ export class UploadFactory {
       !!process.env.RUNPOD_CLIPPER_ENDPOINT_ID &&
       !!process.env.DEEPGRAM_API_KEY &&
       // the clips are picked by the model
-      !!process.env.OPENAI_API_KEY
+      textAIConfigured()
     );
   }
 

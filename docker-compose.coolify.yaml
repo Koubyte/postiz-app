@@ -1,6 +1,5 @@
 services:
   postiz:
-    image: ghcr.io/gitroomhq/postiz-app:v2.25.1
     restart: unless-stopped
     environment:
       MAIN_URL: ${POSTIZ_URL:?}
@@ -58,6 +57,10 @@ services:
       STRIPE_SIGNING_KEY: ''
       STRIPE_SIGNING_KEY_CONNECT: ''
       NX_ADD_PLUGINS: false
+      AI_TEXT_PROVIDER: ${AI_TEXT_PROVIDER:-codex}
+      AI_IMAGE_PROVIDER: ${AI_IMAGE_PROVIDER:-codex}
+      CODEX_BRIDGE_URL: http://codex-bridge:8787/v1
+      CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
     volumes:
     - postiz-config:/config/
     - postiz-uploads:/uploads/
@@ -78,9 +81,14 @@ services:
         condition: service_healthy
       temporal:
         condition: service_healthy
+      codex-bridge:
+        condition: service_healthy
     mem_limit: 3g
     expose:
     - '5000'
+    build:
+      context: .
+      dockerfile: Dockerfile.coolify
   postiz-postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -199,6 +207,7 @@ services:
     environment:
       CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
       CODEX_HOME: /home/node/.codex
+      CODEX_MODEL: ${CODEX_MODEL:-}
     volumes:
     - codex-auth:/home/node/.codex
     tmpfs:
