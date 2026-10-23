@@ -88,7 +88,7 @@ class Generator:
                 unresolved.append({'id':r['id'],'query':r['query'],'reason':'Référence ou photo exacte non confirmée. Précisez le modèle ou un lien fabricant.'});continue
             preferred.append({**product,'request_id':r['id'],'note':r['note'],'price_mode':r['price_mode'],'custom_price':r['price']})
         used={s.get('product_id') for h in history for s in h.get('subjects',[])}
-        candidates=[p for p in products if not p['image_mask_required'] and p['category'] not in ('partitions','vents-classique')]
+        candidates=[p for p in products if not p['image_mask_required'] and p['category'] not in ('librairie-musique','partitions','vents-classique','cables-instruments','cables-sono-eclairage') and not re.search(r'méthode|partition|recueil|songbook|playbook|sheet music|volume [0-9]',p['title']+' '+p['description'],re.I)]
         candidates.sort(key=lambda p:(p['id'] in used,not p['available'],hashlib.sha256((week['week']+p['id']).encode()).hexdigest()))
         selected=list({p['id']:p for p in preferred}.values())[:7]
         categories={p.get('category') for p in selected}
@@ -118,9 +118,10 @@ class Generator:
             instruction='Rédigez une publication Facebook (90 à 160 mots) et Instagram (70 à 140 mots, maximum 5 hashtags pertinents). Headline : 4 à 7 mots, pas de nom de modèle dans le titre visuel si trop long. Un conseil concret, ton chaleureux et précis, pas de superlatifs creux. Pas de Markdown ou HTML dans les textes sociaux, sauts de ligne autorisés. N’annoncez aucun article à venir et n’ajoutez aucun lien de blog non publié.'
         feedback=item['content'].get('_feedback','')
         if feedback:instruction+='\nCorrection demandée par le propriétaire : '+str(feedback)[:2000]+'\nProposition précédente : '+dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})[:14000]
-        content=self.ask(instruction+'\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
+        content=self.ask(instruction+'\nLe champ uncertainty doit être exactement une chaîne vide si les faits inclus dans la rédaction sont vérifiés. Sinon décrivez uniquement le point bloquant.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
         content=validate_content(content,item['kind'])
-        if content.pop('uncertainty',''):raise GenerationError('La rédaction signale une information non vérifiée. Précisez la demande avant reprise.')
+        uncertainty=content.pop('uncertainty','').strip()
+        if uncertainty:raise GenerationError('Information à confirmer : '+uncertainty[:420])
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un coin musique chaleureux et réaliste')
         price_text=None
         if product and product.get('price_mode','hide')!='hide':

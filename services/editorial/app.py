@@ -32,6 +32,8 @@ def work():
             if not row:continue
             job=dict(row)
             db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?",(now(),job['id']))
+            if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
+            if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
             if job['kind']=='draft':db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
             {'plan':generator.plan,'draft':generator.draft,'render':generator.render}[job['kind']](job['target'])
@@ -47,6 +49,7 @@ def work():
                 table='weeks' if job['kind']=='plan' else 'items'
                 db.execute(f"UPDATE {table} SET status='failed',error=? WHERE id=?",(message,job['target']))
                 store.event(db,message)
+                if not retry:db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
 
 def schedule():
     count=0

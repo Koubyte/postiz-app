@@ -206,9 +206,10 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
     _title(draw,headline,(64,1050),952,2,66,52)
     # Product reference is separate and never silently shortened or replaced.
     model_title = product.get('title','') if product else ''
-    if model_title:
-        _title(draw,model_title,(64,1216),670,2,36,32,color='#C4CBC8')
     price = content.get('price_text')
+    reserved_price_width = draw.textlength(str(price),font=_font('inter',36))+80 if price else 0
+    if model_title:
+        _title(draw,model_title,(64,1216),min(900-reserved_price_width,850),2,36,32,color='#C4CBC8')
     if price:
         price = str(price).strip()
         font = _font('inter',36)
