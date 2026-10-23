@@ -190,12 +190,27 @@ def test_seven_subjects_three_distinct_products_and_paris_timezone():
     with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
 
 
-def test_duplicate_days_outside_week_or_invalid_linked_slot_are_blocked():
+def test_explicit_dates_can_share_days_or_leave_the_plan_week():
     plan,products=valid_plan()
-    for subject in plan['subjects']:subject['scheduled_at']='2026-10-19T12:00:00+02:00'
-    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
-    plan,products=valid_plan();plan['subjects'][0]['scheduled_at']='2026-12-19T12:00:00+01:00'
-    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
+    for subject in plan['subjects']:subject['scheduled_at']='2026-10-23T15:30:00+02:00'
+    plan['subjects'][6]['scheduled_at']='2026-12-19T15:30:00+01:00'
+    plan['article']['scheduled_at']='2026-10-23T16:00:00+02:00'
+    validated=validate_plan(plan,products,'2026-10-26')
+    assert all(s['scheduled_at']=='2026-10-23T13:30:00+00:00' for s in validated['subjects'][:6])
+    assert validated['subjects'][6]['scheduled_at']=='2026-12-19T14:30:00+00:00'
+    assert validated['article']['scheduled_at']=='2026-10-23T14:00:00+00:00'
+
+
+@pytest.mark.parametrize('invalid',['not-a-date','2026-10-23T15:30:00',123])
+@pytest.mark.parametrize('kind',['social','blog'])
+def test_explicit_dates_still_require_a_valid_timezone(invalid,kind):
+    plan,products=valid_plan()
+    brief=plan['subjects'][0] if kind=='social' else plan['article']
+    brief['scheduled_at']=invalid
+    with pytest.raises(GenerationError,match='fuseau horaire'):validate_plan(plan,products,'2026-10-26')
+
+
+def test_invalid_linked_blog_slot_is_blocked():
     plan,products=valid_plan();plan['article']['social_slot']=19
     with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
 
@@ -421,3 +436,33 @@ def test_three_references_sent_acknowledged_and_sealed(store,monkeypatch):
         result=original_bridge(*args,**kwargs);result['reference_images_sha256'].reverse();return result
     monkeypatch.setattr(gen,'bridge',reversed_ack)
     with pytest.raises(GenerationError,match='référence'):gen.render(identifier)
+
+
+def test_save_plan_date_outside_week_preserves_briefs_and_requires_approval(store,monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv('EDITORIAL_DATA',str(store.root))
+    monkeypatch.setenv('EDITORIAL_WORKER','false')
+    monkeypatch.setenv('PUBLIC_URL','https://postiz.example.com')
+    spec=importlib.util.spec_from_file_location('editorial_schedule_app',Path(__file__).with_name('app.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    async def owner(_):return 'owner'
+    monkeypatch.setattr(module,'actor',owner)
+    week,original=create_plan(store)
+    edited=json.loads(dumps(original));edited['subjects'][1]['scheduled_at']='2030-10-25T15:30:00+02:00'
+    headers={'origin':'https://postiz.example.com','x-editorial-action':'1'}
+    with TestClient(module.app) as client:
+        response=client.post('/editorial/api/weeks/'+week+'/save',headers=headers,json={'revision':1,'plan':edited})
+        assert response.status_code==200,response.text
+        with store.db() as db:
+            row=db.execute('SELECT * FROM weeks WHERE id=?',(week,)).fetchone()
+            assert row['status']=='plan_review' and row['revision']==2
+            saved=json.loads(row['plan'])
+            assert saved['subjects'][1]['scheduled_at']=='2030-10-25T13:30:00+00:00'
+            saved['subjects'][1]['scheduled_at']=original['subjects'][1]['scheduled_at']
+            assert saved==original
+            assert db.execute('SELECT COUNT(*) FROM items WHERE week_id=?',(week,)).fetchone()[0]==0
+        # A past date can be saved for editing, but never approved for creation/publication.
+        edited['subjects'][1]['scheduled_at']='2000-01-01T15:30:00+01:00'
+        assert client.post('/editorial/api/weeks/'+week+'/save',headers=headers,json={'revision':2,'plan':edited}).status_code==200
+        response=client.post('/editorial/api/weeks/'+week+'/approve',headers=headers,json={'revision':3})
+        assert response.status_code==409 and 'date passée' in response.json()['error']

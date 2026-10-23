@@ -5,12 +5,12 @@ import json
 import os
 import re
 import hashlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 import requests
 from net import public_bytes
-from store import now, dumps, planned_date, uid, Conflict, PARIS
+from store import now, dumps, planned_date, uid, Conflict
 
 class GenerationError(ValueError):pass
 
@@ -289,21 +289,22 @@ def validate_plan(value,products,week):
         subjects.append({'slot':slot,'kind':kind,'title':bounded_text(s['title'],160),'angle':bounded_text(s['angle'],2000),'product_id':p,'scene':bounded_text(s.get('scene','Scène musicale chaleureuse'),800),'scheduled_at':s.get('scheduled_at') or planned_date(week,slot,12)})
     if len({s['product_id'] for s in subjects if s['kind']=='product'})<3:raise GenerationError('Le plan doit mettre en avant trois produits distincts au minimum.')
     if any(p.get('request_id') and p['id'] not in {s['product_id'] for s in subjects} for p in products):raise GenerationError('Une demande prioritaire manque dans le plan.')
-    for slot,subject in enumerate(subjects):
+    # The week groups a batch of briefs; only defaults are tied to weekdays.
+    # Explicit owner dates may be before/after the batch or share a day.
+    for subject in subjects:
         try:
             d=datetime.fromisoformat(subject['scheduled_at'].replace('Z','+00:00'))
-            expected=(datetime.fromisoformat(week)+timedelta(days=slot)).date()
-            if d.tzinfo is None or d.astimezone(PARIS).date()!=expected:raise ValueError()
+            if d.tzinfo is None:raise ValueError()
             subject['scheduled_at']=d.astimezone(timezone.utc).isoformat()
-        except (ValueError,AttributeError):raise GenerationError('Chaque sujet doit occuper son jour de la semaine en heure de Paris.')
+        except (ValueError,AttributeError):raise GenerationError('Chaque sujet doit avoir une date valide avec un fuseau horaire. Les dates sont affichées en heure de Paris.')
     article=value.get('article',{})
     if type(article.get('social_slot',6)) is not int or not 0<=article.get('social_slot',6)<=6:raise GenerationError('Créneau social du blog invalide.')
     try:
         ad=datetime.fromisoformat((article.get('scheduled_at') or planned_date(week,2,9)).replace('Z','+00:00'))
-        if ad.tzinfo is None or not datetime.fromisoformat(week).date() <= ad.astimezone(PARIS).date() < (datetime.fromisoformat(week)+timedelta(days=7)).date():raise ValueError()
-    except (ValueError,AttributeError):raise GenerationError('L’article doit être prévu dans la semaine.')
+        if ad.tzinfo is None:raise ValueError()
+    except (ValueError,AttributeError):raise GenerationError('L’article doit avoir une date valide avec un fuseau horaire.')
     if article.get('product_id') not in ids|{None}:raise GenerationError('Produit de blog inconnu.')
-    return {'subjects':subjects,'article':{'title':bounded_text(article['title'],160),'angle':bounded_text(article['angle'],3000),'product_id':article.get('product_id'),'social_slot':int(article.get('social_slot',6)),'scheduled_at':article.get('scheduled_at') or planned_date(week,2,9)}}
+    return {'subjects':subjects,'article':{'title':bounded_text(article['title'],160),'angle':bounded_text(article['angle'],3000),'product_id':article.get('product_id'),'social_slot':int(article.get('social_slot',6)),'scheduled_at':ad.astimezone(timezone.utc).isoformat()}}
 
 def validate_content(content,kind):
     if not isinstance(content,dict):raise GenerationError('Contenu invalide.')

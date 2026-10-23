@@ -385,7 +385,7 @@ function renderPlan(w) {
     el(
       'p',
       {},
-      'Ajustez les titres, les angles et les scènes. La validation de ce plan lance la rédaction et la création des visuels ; elle ne publie aucun contenu.',
+      'Ajustez les titres, les angles, les scènes et les dates. Chaque date est libre, même en dehors de la semaine du plan, et affichée en heure de Paris. La validation de ce plan lance la rédaction et la création des visuels ; elle ne publie aucun contenu.',
     ),
   );
   const plan = structuredClone(w.plan);

@@ -87,3 +87,8 @@ date); the HD-300 sky-blue nickname requires an explicit Bay Blue clarification.
 Up to three reference photos are passed in order to the image bridge. Every
 attachment must be acknowledged by its SHA-256; all reference files are retained
 for review and sealed with the final approved visual. No cutout/compositing occurs.
+
+Manual scheduling is independent of the plan week: the daily Monday–Sunday
+spread is a default only. Social posts and the blog can be moved to any explicit
+date, including the same day or before the batch week, in Europe/Paris. Saving
+a date does not approve or generate content; past dates still block approval.
