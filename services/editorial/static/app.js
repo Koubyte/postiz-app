@@ -1175,6 +1175,10 @@ function openItem(item) {
         ),
   );
   fields.append(sources);
+  if (content.editorial_notes?.length) fields.append(el('details', { class: 'sources' },
+    el('summary', {}, 'Remarques de rédaction · sans blocage'),
+    el('ul', {}, content.editorial_notes.map((note) => el('li', {}, note))),
+  ));
   if (item.error)
     fields.append(el('div', { class: 'notice error' }, item.error));
   if (item.deliveries?.length)

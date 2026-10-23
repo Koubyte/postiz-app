@@ -5,6 +5,7 @@ import json
 import os
 import re
 import hashlib
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -202,10 +203,9 @@ class Generator:
             correction=str(feedback) if item['kind']=='blog' else str(feedback)[:2000]
             previous=dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})
             instruction+='\nLa correction suivante prime sur les longueurs indicatives ci-dessus. Correction demandée par le propriétaire : '+correction+'\nProposition précédente : '+(previous if item['kind']=='blog' else previous[:14000])
-        content=self.ask(instruction+'\nLe champ uncertainty doit être exactement une chaîne vide si les faits inclus dans la rédaction sont vérifiés. Sinon décrivez uniquement le point bloquant.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
+        content=self.ask(instruction+'\nContinuez la rédaction même si une source est inaccessible : omettez les affirmations invérifiables ou formulez-les avec la réserve appropriée. Ne les inventez pas. Le champ uncertainty contient les réserves utiles au propriétaire, ou une chaîne vide ; ce sont des remarques, jamais une demande de bloquer le brouillon.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
         content=validate_content(content,item['kind'])
-        uncertainty=content.pop('uncertainty','').strip()
-        if uncertainty:raise GenerationError('Information à confirmer : '+uncertainty[:420])
+        content.pop('uncertainty',None)
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un environnement pertinent pour le produit et son usage, à varier selon les scènes récentes')
         if feedback:content['_visual_feedback']=str(feedback)[:2000]
         price_text=None
@@ -325,19 +325,39 @@ def validate_plan(value,products,week):
 def validate_content(content,kind):
     if not isinstance(content,dict):raise GenerationError('Contenu invalide.')
     allowed=['title','headline','alt','uncertainty']+(['facebook','instagram'] if kind=='social' else ['markdown','excerpt','slug','category'])
-    result={k:bounded_text(content.get(k,''),{'markdown':None,'instagram':2200,'title':220,'headline':90,'excerpt':1000,'slug':100,'alt':300}.get(k,5000)) for k in allowed}
-    if not result['title'] or not result['headline']:raise GenerationError('Titre manquant.')
-    if len(result['headline'])>90:raise GenerationError('Accroche trop longue pour le gabarit.')
+    result={}
+    for key in allowed:
+        value=content.get(key,'')
+        if value is None:value=''
+        if not isinstance(value,str):raise GenerationError('Champ texte invalide : '+key+'.')
+        result[key]=value.strip()
+    notes=[]
+    if result['uncertainty']:notes.append(result['uncertainty'])
+    body=result.get('markdown',result.get('facebook',''))
+    result['title']=result['title'] or re.sub(r'[#*_`]', '',body.split('\n')[0]).strip() or 'Conseils Planète Laser'
+    result['headline']=result['headline'] or result['title']
+    result['alt']=result['alt'] or result['title']
+    if kind=='blog':result['excerpt']=result['excerpt'] or re.sub(r'[#*_`]', '',body).strip()
+    # Adapt display metadata to the website and visual template, never cut the article.
+    for key,limit in {'title':220,'headline':90,'excerpt':1000,'alt':300}.items():
+        if key in result and len(result[key])>limit:
+            result[key]=result[key][:limit-1].rsplit(' ',1)[0]+'…'
+            notes.append('Champ '+key+' raccourci automatiquement pour l’affichage.')
+    if kind=='social' and len(result['instagram'])>2200:raise GenerationError('Instagram accepte au maximum 2 200 caractères ; raccourcissez ce texte.')
     for key in ('title','headline','alt','facebook','instagram') if kind=='social' else ('title','headline','alt','excerpt','markdown'):
         if (key in ('facebook','instagram','markdown') and not result[key]) or re.search(r'<[^>]+>',result[key]):raise GenerationError('Contenu vide ou HTML non autorisé.')
-        if re.search(r'\b\d+[,.]?\d*\s*(?:€|euros?\b|EUR\b)|\b(?:en stock|disponible en magasin|promotion|remise de)\b',result[key],re.I):raise GenerationError('Une donnée commerciale non validée a été générée.')
+        if re.search(r'\b\d+[,.]?\d*\s*(?:€|euros?\b|EUR\b)|\b(?:en stock|disponible en magasin|promotion|remise de)\b',result[key],re.I):
+            note='Le texte contient un prix ou une mention commerciale : vérifiez-les dans l’aperçu.'
+            if note not in notes:notes.append(note)
     if kind=='blog':
         if re.search(r'!\s*\[|<\s*img',result['markdown'],re.I):raise GenerationError('Les images de l’article doivent passer par la validation des médias.')
         for link in re.findall(r'\[[^\]]*\]\(([^)]+)\)',result['markdown']):
             if not link.startswith(('https://','/')) or link.startswith('//'):raise GenerationError('Lien non autorisé dans l’article.')
-        if not re.fullmatch('[a-z0-9]+(?:-[a-z0-9]+)*',result['slug']):raise GenerationError('Slug invalide.')
-        if result['category'] not in ('guides','actualites','produits'):raise GenerationError('Catégorie invalide.')
-        if len(result['markdown'].split())<500:raise GenerationError('L’article doit contenir au moins 500 mots.')
+        slug=unicodedata.normalize('NFKD',result['slug'] or result['title']).encode('ascii','ignore').decode().lower()
+        result['slug']=re.sub('[^a-z0-9]+','-',slug).strip('-')[:100].rstrip('-') or 'article-planete-laser'
+        if result['category'] not in ('guides','actualites','produits'):result['category']='guides'
+        if len(result['markdown'].split())<500:notes.append('Le brouillon contient moins de 500 mots ; la consigne de rédaction reste 500 mots minimum.')
     result['sources']=safe_sources(content.get('sources',[]))
-    if not result['sources']:raise GenerationError('La rédaction doit citer ses sources.')
+    if not result['sources']:notes.append('Aucune source jointe ; vérifiez les affirmations dans l’aperçu.')
+    result['editorial_notes']=notes
     return result

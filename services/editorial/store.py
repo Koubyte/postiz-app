@@ -124,7 +124,7 @@ class Store:
             if db.execute("SELECT 1 FROM deliveries WHERE item_id=? AND status NOT IN ('failed')",(id,)).fetchone():raise Conflict('Une livraison existe déjà : réconciliation nécessaire avant modification.')
             self.snapshot(db,item)
             # Price and product identity are controlled by the approved plan, not the model/editor JSON.
-            allowed=('title','facebook','instagram','markdown','excerpt','slug','category','headline','alt','sources')
+            allowed=('title','facebook','instagram','markdown','excerpt','slug','category','headline','alt','sources','editorial_notes')
             merged={**item['content'],**{k:v for k,v in content.items() if k in allowed}}
             changed_visual=any(merged.get(k)!=item['content'].get(k) for k in ('headline','title'))
             media=item['media']

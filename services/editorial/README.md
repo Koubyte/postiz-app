@@ -213,7 +213,7 @@ before sealing and in the final public-projection transaction. A changed or
 unapproved parent prevents automatic publication. Reapproving with the option
 unchecked revokes an unpublished companion; opting in again reuses the same
 article rather than duplicating it. Already published articles remain intact.
-Uncertainty, missing references, media integrity or catalogue checks still block
+Missing product references, media integrity or catalogue checks still block
 publication. Resume handles both a finished draft and an interrupted render.
 
 Articles and assets are stored in the studio's persistent SQLite/media volume.
@@ -271,8 +271,21 @@ No existing post is regenerated or approval changed during deployment.
 
 ### Blog length
 
-Blog bodies require at least 500 words and have no editorial upper word/character
+Blog drafting targets at least 500 words and has no editorial upper word/character
 limit. The Markdown editor has no maxlength. Blog briefs, rewrite instructions
 and previous article bodies are passed through without editorial truncation;
-social caption and metadata limits remain unchanged. HTTP/model transport bounds
+Instagram platform limits still apply; display metadata is normalized. HTTP/model transport bounds
 still protect resource usage and are distinct from an article-length rule.
+
+
+### Non-blocking editorial review
+
+Source omissions, model uncertainty, commercial mentions and drafts below the
+500-word writing target are retained as private `content.editorial_notes`, visible
+to Grok and in the review screen. They never fail a draft or create a second
+approval requirement. The writer must omit unsupported facts rather than invent
+them. Display metadata is shortened automatically; slugs and categories are
+normalized. Article bodies are never truncated. Invalid payloads, unsafe markup
+and links, platform limits, product reference integrity, explicit consent,
+revision sealing, scheduling spacing and duplicate-delivery protections remain.
+The public blog projection excludes these private notes.

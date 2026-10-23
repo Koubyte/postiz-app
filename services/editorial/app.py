@@ -152,13 +152,16 @@ def date(value):
 def editable_content(value,item):
     if not isinstance(value,dict):raise Conflict('Contenu invalide.')
     merged={**item['content'],**{k:v for k,v in value.items() if k in ('title','headline','facebook','instagram','markdown','excerpt','slug','category','alt','sources')}}
-    # Commercial text is derived from the reviewed plan, not editable into a hidden-price post.
+    # Do not flag a catalogue price that was already injected by the studio.
     checked=dict(merged)
     price=item['content'].get('price_text')
     if price:
         for field in ('facebook','instagram','markdown'):
             if field in checked:checked[field]=checked[field].replace('Prix : '+price+'.','').replace('Prix Planète Laser : '+price+'.','')
-    validate_content(checked,item['kind'])
+    checked=validate_content(checked,item['kind'])
+    for key in ('title','headline','excerpt','slug','category','alt','sources'):
+        if key in checked:merged[key]=checked[key]
+    merged['editorial_notes']=list(dict.fromkeys(item['content'].get('editorial_notes',[])+checked['editorial_notes']))
     return merged
 
 @app.get('/health')

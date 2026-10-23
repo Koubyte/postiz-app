@@ -217,9 +217,11 @@ def test_invalid_linked_blog_slot_is_blocked():
 
 
 @pytest.mark.parametrize('field',['facebook','instagram','headline','title','alt'])
-def test_price_hidden_cannot_be_undermined_by_model_text(field):
+def test_commercial_text_is_kept_with_a_review_note(field):
     candidate=content();candidate[field]='Un microphone à 99 € pour votre studio.'
-    with pytest.raises(GenerationError):validate_content(candidate,'social')
+    result=validate_content(candidate,'social')
+    assert result[field]==candidate[field]
+    assert any('prix ou une mention commerciale' in note for note in result['editorial_notes'])
 
 
 def test_draft_hidden_price_is_not_injected(store,monkeypatch):
