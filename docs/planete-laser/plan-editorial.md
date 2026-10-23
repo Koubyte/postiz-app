@@ -1,10 +1,10 @@
 # Planète Laser — système éditorial proposé
 
-Statut : proposition de fonctionnement à valider. La recherche Internet est un correctif distinct ; ce document ne signifie pas que la préparation hebdomadaire ou le blog sont déjà automatisés.
+Direction, cadence et validations approuvées par le propriétaire le 23 octobre 2026. Le studio implémente la préparation des plans, la rédaction après approbation du plan, les visuels composés, les approbations exactes et les livraisons. Voir services/editorial/README.md pour le fonctionnement livré et ses limites. Les plans hebdomadaires et leurs contenus restent à valider individuellement.
 
 ## Résultat attendu
 
-Sept sujets chaque semaine, déclinés chacun pour Facebook et Instagram (14 publications), dont au moins trois produits distincts. Les demandes ponctuelles du magasin remplacent des créneaux du plan ; elles ne créent pas automatiquement une publication supplémentaire. Cadence blog proposée : un article approfondi par semaine au démarrage, actualité ou conseil selon la matière disponible. Ce rythme reste à valider.
+Sept sujets chaque semaine, déclinés chacun pour Facebook et Instagram (14 publications), dont au moins trois produits distincts. Les demandes ponctuelles du magasin remplacent des créneaux du plan ; elles ne créent pas automatiquement une publication supplémentaire. Cadence blog proposée : un article approfondi par semaine au démarrage, actualité ou conseil selon la matière disponible. Ce rythme a été validé.
 
 ## Deux validations distinctes
 

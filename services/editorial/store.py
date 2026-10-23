@@ -36,6 +36,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, query TEXT NOT NULL, note TEXT NOT NULL, price_mode TEXT NOT NULL, price TEXT, priority INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', week_id TEXT, created TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, updated TEXT NOT NULL, UNIQUE(kind,target));
             CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, revision INTEGER NOT NULL, channel TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL DEFAULT '{}', updated TEXT NOT NULL, UNIQUE(item_id,revision,channel));
+            CREATE TABLE IF NOT EXISTS plan_changes (id TEXT PRIMARY KEY, week_id TEXT NOT NULL, slot INTEGER NOT NULL, revision INTEGER NOT NULL, instruction TEXT NOT NULL, request_id TEXT, status TEXT NOT NULL, created TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT NOT NULL, message TEXT NOT NULL, actor TEXT);
             CREATE TABLE IF NOT EXISTS published (slug TEXT PRIMARY KEY, item_id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS revisions (item_id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY(item_id,revision));
@@ -67,6 +68,29 @@ class Store:
             db.execute("INSERT INTO weeks(id,week,status,created) VALUES(?,?,'preparing',?)",(id,week,now()))
             self.job(db,'plan',id); self.event(db,'Préparation du plan de la semaine du '+week)
             return id
+    def revise_subject(self, week_id, slot, revision, instruction, request_id, actor):
+        if type(slot) is not int or not 0<=slot<=6:raise Conflict('Créneau invalide.')
+        if not isinstance(instruction,str) or len(instruction)>3000:raise Conflict('Consigne invalide.')
+        if request_id is not None and (not isinstance(request_id,str) or len(request_id)>100):raise Conflict('Demande produit invalide.')
+        instruction=instruction.strip()
+        if not instruction and not request_id:raise Conflict('Indiquez une consigne ou choisissez une demande produit.')
+        with self.db() as db:
+            row=db.execute('SELECT * FROM weeks WHERE id=?',(week_id,)).fetchone()
+            if not row or row['revision']!=revision or row['status']!='plan_review':raise Conflict('Ce plan a changé ou est déjà en production.')
+            if db.execute('SELECT 1 FROM items WHERE week_id=?',(week_id,)).fetchone():raise Conflict('Modifiez le contenu individuel déjà rédigé.')
+            if request_id and not db.execute("SELECT 1 FROM requests WHERE id=? AND status='pending'",(request_id,)).fetchone():raise Conflict('Cette demande produit n’est plus en attente.')
+            if request_id and db.execute("SELECT 1 FROM plan_changes WHERE request_id=? AND status='queued'",(request_id,)).fetchone():raise Conflict('Cette demande est déjà en cours de traitement.')
+            id=uid()
+            db.execute("INSERT INTO plan_changes VALUES(?,?,?,?,?,?,'queued',?)",(id,week_id,slot,revision,instruction,request_id,now()))
+            db.execute("UPDATE weeks SET status='revising',error=NULL WHERE id=?",(week_id,))
+            self.job(db,'revise',id)
+            self.event(db,'Modification demandée pour le post '+str(slot+1)+' uniquement.',actor)
+            return id
+    def fail_revision(self, db, change_id, message):
+        row=db.execute('SELECT * FROM plan_changes WHERE id=?',(change_id,)).fetchone()
+        if row:
+            db.execute("UPDATE plan_changes SET status='failed' WHERE id=?",(change_id,))
+            db.execute("UPDATE weeks SET status='plan_review',error=? WHERE id=? AND revision=? AND status='revising'",(message,row['week_id'],row['revision']))
     def item(self, id, db=None):
         if db is None:
             with self.db() as conn:return self.item(id,conn)
@@ -109,6 +133,8 @@ class Store:
     def recover(self):
         with self.db() as db:
             db.execute("UPDATE jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,updated=? WHERE status='running'",(now(),))
+            for row in db.execute("SELECT target FROM jobs WHERE kind='revise' AND status='failed'").fetchall():
+                self.fail_revision(db,row[0],'Modification interrompue. Le plan initial est conservé ; vous pouvez réessayer.')
             db.execute("UPDATE items SET status='blocked',error='Envoi interrompu : vérifier dans Postiz avant toute nouvelle tentative.' WHERE status='publishing'")
             db.execute("UPDATE deliveries SET status='uncertain' WHERE status='sending'")
     def public_articles(self):

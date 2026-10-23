@@ -105,19 +105,66 @@ def test_advice_cover_has_no_logo_or_text(tmp_path,monkeypatch):
     assert 'source_media' not in result
 
 
-def test_optional_segmenter_uses_only_explicit_local_model(tmp_path,monkeypatch):
+def model_fixture(tmp_path,monkeypatch,prediction=None):
+    import hashlib
+    import numpy as np
     from types import SimpleNamespace
-    (tmp_path/'u2netp.onnx').write_bytes(b'provided-model')
+    model=tmp_path/'u2netp.onnx'
+    model.write_bytes(b'provided-model')
     monkeypatch.setenv('U2NET_HOME',str(tmp_path))
+    monkeypatch.setattr(media,'MODEL_BYTES',model.stat().st_size)
+    monkeypatch.setattr(media,'MODEL_SHA256',hashlib.sha256(model.read_bytes()).hexdigest())
     calls=[]
-    def session(name,**kwargs):
-        calls.append((name,kwargs))
-        return object()
-    mask=source().getchannel('A')
-    monkeypatch.setitem(sys.modules,'rembg',SimpleNamespace(new_session=session,remove=lambda image,**kwargs:mask))
+    if prediction is None:
+        prediction=np.zeros((1,1,320,320),dtype=np.float32)
+        prediction[:,:,30:290,60:260]=1
+    class Session:
+        def __init__(self,path,**kwargs):calls.append(('session',path,kwargs))
+        def get_inputs(self):return [SimpleNamespace(name='input')]
+        def run(self,outputs,inputs):
+            calls.append(('run',inputs))
+            return [prediction]
+    monkeypatch.setitem(sys.modules,'onnxruntime',SimpleNamespace(SessionOptions=SimpleNamespace,InferenceSession=Session))
+    return model,calls
+
+
+def test_local_segmenter_normalizes_input_and_preserves_source_rgb(tmp_path,monkeypatch):
+    import numpy as np
+    model,calls=model_fixture(tmp_path,monkeypatch)
     product,method=media._cutout(source(alpha=False))
-    assert method=='rembg-u2netp'
-    assert calls[0][0]=='u2net_custom'
-    assert calls[0][1]['model_path']==str(tmp_path/'u2netp.onnx')
-    assert calls[0][1]['providers']==['CPUExecutionProvider']
+    assert method=='onnx-u2netp'
+    assert calls[0][1]==str(model)
+    assert calls[0][2]['providers']==['CPUExecutionProvider']
+    options=calls[0][2]['sess_options']
+    assert options.intra_op_num_threads==options.inter_op_num_threads==1
+    tensor=calls[1][1]['input']
+    assert tensor.shape==(1,3,320,320) and tensor.dtype==np.float32
+    assert np.isfinite(tensor).all()
+    np.testing.assert_allclose(tensor[0,:,0,0],(np.ones(3)-[.485,.456,.406])/[.229,.224,.225],rtol=1e-6)
     assert product.convert('RGB').tobytes()==source(alpha=False).convert('RGB').tobytes()
+
+
+@pytest.mark.parametrize('invalid',['uniform','nan'])
+def test_segmenter_rejects_uniform_or_nonfinite_masks(tmp_path,monkeypatch,invalid):
+    import numpy as np
+    prediction=np.full((1,1,320,320),float('nan') if invalid=='nan' else .5,dtype=np.float32)
+    model,calls=model_fixture(tmp_path,monkeypatch,prediction)
+    with pytest.raises(media.MediaBlocked,match='masque'):
+        media._cutout(source(alpha=False))
+
+
+def test_model_checksum_mismatch_cannot_trigger_inference_or_download(tmp_path,monkeypatch):
+    model,calls=model_fixture(tmp_path,monkeypatch)
+    model.write_bytes(b'corrupted model')
+    monkeypatch.setattr(media,'public_bytes',lambda *a,**k:pytest.fail('No download allowed'))
+    with pytest.raises(media.MediaBlocked,match='version vérifiée'):
+        media._cutout(source(alpha=False))
+    assert calls==[]
+
+
+def test_missing_model_uses_local_packshot_fallback_without_download(tmp_path,monkeypatch):
+    monkeypatch.setenv('U2NET_HOME',str(tmp_path))
+    monkeypatch.setattr(media,'public_bytes',lambda *a,**k:pytest.fail('No download allowed'))
+    image,method=media._cutout(source(alpha=False))
+    assert method=='edge-connected-white'
+    assert image.convert('RGB').tobytes()==source(alpha=False).convert('RGB').tobytes()

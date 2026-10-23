@@ -10,6 +10,7 @@ const state = {
 };
 const labels = {
   plan_review: 'Plan à valider',
+  revising: 'Modification d’un sujet',
   preparing: 'Préparation du plan',
   publishing: 'Publication en cours',
   scheduled: 'Programmé dans Postiz',
@@ -285,7 +286,8 @@ function render() {
     );
   } else {
     out.append(workflow(w));
-    if (w.status === 'plan_review') out.append(renderPlan(w));
+    if (w.status === 'plan_review' || w.status === 'revising')
+      out.append(renderPlan(w));
     else if (w.status === 'generating')
       out.append(
         el(
@@ -324,7 +326,7 @@ function render() {
           retry,
         ),
       );
-    } else if (w.status !== 'plan_review')
+    } else if (!['plan_review', 'revising'].includes(w.status))
       out.append(
         el(
           'div',
@@ -338,7 +340,9 @@ function render() {
   renderEvents();
 }
 function workflow(w) {
-  const stage = ['preparing', 'plan_review', 'failed'].includes(w.status)
+  const stage = ['preparing', 'plan_review', 'revising', 'failed'].includes(
+    w.status,
+  )
     ? 0
     : w.status === 'generating'
       ? 1
@@ -366,6 +370,7 @@ function field(labelText, tag, value, attrs = {}) {
   return { label: el('label', {}, labelText, input), input };
 }
 function renderPlan(w) {
+  const revising = w.status === 'revising';
   const panel = el(
     'section',
     { class: 'plan-panel' },
@@ -382,6 +387,14 @@ function renderPlan(w) {
     ),
   );
   const plan = structuredClone(w.plan);
+  if (revising)
+    panel.append(
+      el(
+        'div',
+        { class: 'notice', role: 'status' },
+        `Le studio modifie ${w.pending_slot !== null && w.pending_slot !== undefined ? 'le post ' + (Number(w.pending_slot) + 1) : 'le post sélectionné'}. Les six autres sujets et l’article de blog restent inchangés. Vous pourrez relire la proposition avant de valider le plan.`,
+      ),
+    );
   const dates = [];
   function dateField(brief) {
     const value = field(
@@ -469,6 +482,17 @@ function renderPlan(w) {
       subject.scene = scene.input.value;
       markDirty();
     });
+    card.append(
+      el(
+        'button',
+        {
+          class: 'button secondary',
+          type: 'button',
+          onclick: () => openSubjectRevision(w, subject.slot),
+        },
+        'Modifier ce post',
+      ),
+    );
     list.append(card);
   }
   if (plan.article) {
@@ -586,7 +610,149 @@ function renderPlan(w) {
       approve,
     ),
   );
+  if (revising)
+    panel
+      .querySelectorAll('input,textarea,select,button')
+      .forEach((input) => (input.disabled = true));
   return panel;
+}
+function openSubjectRevision(week, slot = null, request = null) {
+  if (state.dirty) {
+    const text =
+      'Enregistrez d’abord vos modifications du plan avant de demander la modification d’un post.';
+    message(text, true);
+    toast(text);
+    return;
+  }
+  if (
+    currentWeek()?.id !== week.id ||
+    currentWeek()?.status !== 'plan_review'
+  ) {
+    message(
+      'La modification d’un sujet est disponible tant que le plan attend votre validation.',
+      true,
+    );
+    return;
+  }
+  const dialog = $('subject-dialog');
+  const form = el('form');
+  const close = () => dialog.close();
+  form.append(
+    el(
+      'div',
+      { class: 'dialog-heading' },
+      el(
+        'div',
+        {},
+        el('p', { class: 'eyebrow' }, 'UN SEUL SUJET À REVOIR'),
+        el('h2', { id: 'subject-title' }, 'Modifier ce post'),
+      ),
+      el(
+        'button',
+        {
+          class: 'icon-button',
+          type: 'button',
+          'aria-label': 'Fermer',
+          onclick: close,
+        },
+        '×',
+      ),
+    ),
+  );
+  form.append(
+    el(
+      'p',
+      { class: 'hint' },
+      'Seul le post sélectionné sera retravaillé. Les six autres sujets, leurs dates et l’article de blog resteront inchangés. Cette action ne valide ni ne publie le plan.',
+    ),
+  );
+  const select = el('select', { required: true, disabled: slot !== null });
+  select.append(
+    el('option', { value: '' }, 'Choisir le post à remplacer'),
+    ...(week.plan?.subjects || []).map((s) =>
+      el(
+        'option',
+        { value: String(s.slot) },
+        `${Number(s.slot) + 1} · ${s.title}`,
+      ),
+    ),
+  );
+  select.value = slot === null ? '' : String(slot);
+  form.append(el('label', {}, 'Post concerné', select));
+  const requests = el('select');
+  requests.append(
+    el('option', { value: '' }, 'Aucune · modifier le sujet actuel'),
+    ...(state.data.requests || [])
+      .filter((r) => r.status === 'pending')
+      .map((r) => el('option', { value: r.id }, r.query)),
+  );
+  requests.value = request?.id || '';
+  form.append(
+    el('label', {}, 'Demande produit à utiliser · facultatif', requests),
+  );
+  const instruction = el('textarea', {
+    rows: 4,
+    required: true,
+    maxlength: 3000,
+    placeholder:
+      'Ex. Remplacer ce sujet par ce nouveau produit, sans prix, en mettant en avant son usage en répétition.',
+  });
+  const defaultInstruction =
+    'Remplacer uniquement ce sujet par la mise en avant du produit demandé, en respectant la consigne et le prix de la demande.';
+  if (request) instruction.value = defaultInstruction;
+  requests.onchange = () => {
+    if (requests.value && !instruction.value.trim())
+      instruction.value = defaultInstruction;
+  };
+  form.append(el('label', {}, 'Ce que vous souhaitez changer', instruction));
+  const error = el('div', {
+    class: 'dialog-error notice error',
+    role: 'alert',
+    hidden: true,
+  });
+  const submit = el(
+    'button',
+    { class: 'button primary', type: 'submit' },
+    'Revoir uniquement ce post',
+  );
+  form.append(
+    error,
+    el(
+      'div',
+      { class: 'dialog-footer' },
+      el(
+        'button',
+        { class: 'button secondary', type: 'button', onclick: close },
+        'Annuler',
+      ),
+      submit,
+    ),
+  );
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    action(submit, async () => {
+      if (state.dirty)
+        throw new Error('Enregistrez d’abord vos modifications du plan.');
+      if (select.value === '')
+        throw new Error('Choisissez le post à modifier.');
+      const body = {
+        revision: week.revision,
+        instruction: instruction.value.trim(),
+      };
+      if (requests.value) body.request_id = requests.value;
+      await api(
+        `/weeks/${encodeURIComponent(week.id)}/subjects/${encodeURIComponent(select.value)}/revise`,
+        body,
+      );
+      dialog.close();
+      await refresh(true);
+      toast(
+        'Modification de ce seul post lancée. Les autres sujets sont conservés.',
+      );
+    });
+  };
+  $('subject-content').replaceChildren(form);
+  dialog.showModal();
 }
 function itemCard(item) {
   const c = item.content || {};
@@ -674,6 +840,17 @@ function renderRequests() {
         ),
         badge(r.status),
       ),
+      r.status === 'pending' && currentWeek()?.status === 'plan_review'
+        ? el(
+            'button',
+            {
+              class: 'button secondary',
+              type: 'button',
+              onclick: () => openSubjectRevision(currentWeek(), null, r),
+            },
+            'Utiliser dans cette semaine',
+          )
+        : null,
     ),
   );
   $('requests').replaceChildren(

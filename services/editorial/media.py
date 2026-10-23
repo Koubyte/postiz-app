@@ -18,6 +18,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
 ASSETS = Path(__file__).with_name('media-assets')
 BRAND_VERSION = 'pl-social-v1'
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MODEL_SHA256 = '309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8'
+MODEL_BYTES = 4574861
+_MODEL_SESSIONS = {}
 Image.MAX_IMAGE_PIXELS = 24_000_000
 
 
@@ -82,6 +85,36 @@ def _white_mask(image: Image.Image) -> Image.Image:
     return mask.resize(image.size, Image.Resampling.NEAREST)
 
 
+def _model_mask(source: Image.Image, model: Path) -> Image.Image:
+    """Run the pinned local U2netp graph directly; no download/client is involved."""
+    import numpy as np
+    if model.stat().st_size != MODEL_BYTES or hashlib.sha256(model.read_bytes()).hexdigest() != MODEL_SHA256:
+        raise MediaBlocked('Le modèle de détourage local ne correspond pas à la version vérifiée.')
+    import onnxruntime as ort
+    key = str(model.resolve())
+    if key not in _MODEL_SESSIONS:
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        _MODEL_SESSIONS[key] = ort.InferenceSession(key, sess_options=options, providers=['CPUExecutionProvider'])
+    session = _MODEL_SESSIONS[key]
+    pixels = np.asarray(source.convert('RGB').resize((320,320), Image.Resampling.LANCZOS), dtype=np.float32)
+    pixels = pixels / max(float(pixels.max()), 1e-6)
+    pixels = (pixels - np.array([.485,.456,.406],dtype=np.float32)) / np.array([.229,.224,.225],dtype=np.float32)
+    tensor = np.ascontiguousarray(pixels.transpose(2,0,1)[None,...], dtype=np.float32)
+    outputs = session.run(None, {session.get_inputs()[0].name:tensor})
+    if not outputs or outputs[0].ndim != 4 or outputs[0].shape[0] != 1 or outputs[0].shape[1] < 1:
+        raise MediaBlocked('Le moteur de détourage a renvoyé un masque invalide.')
+    prediction = outputs[0][0,0,:,:]
+    if prediction.shape != (320,320) or not np.isfinite(prediction).all():
+        raise MediaBlocked('Le moteur de détourage a renvoyé un masque invalide.')
+    minimum, maximum = float(prediction.min()), float(prediction.max())
+    if maximum-minimum < 1e-6:
+        raise MediaBlocked('Le moteur de détourage a renvoyé un masque uniforme.')
+    alpha = np.clip((prediction-minimum)/(maximum-minimum)*255,0,255).astype(np.uint8)
+    return Image.fromarray(alpha).resize(source.size,Image.Resampling.LANCZOS)
+
+
 def _cutout(source: Image.Image) -> tuple[Image.Image, str]:
     alpha = source.getchannel('A')
     if alpha.getextrema()[0] < 250:
@@ -89,11 +122,11 @@ def _cutout(source: Image.Image) -> tuple[Image.Image, str]:
     else:
         model = Path(os.environ.get('U2NET_HOME', '/models')) / 'u2netp.onnx'
         if model.is_file():
-            # Never let rembg download a model in response to untrusted content.
             try:
-                from rembg import new_session, remove
-                mask = remove(source, session=new_session('u2net_custom', model_path=str(model.resolve()), providers=['CPUExecutionProvider']), only_mask=True).convert('L')
-                method = 'rembg-u2netp'
+                mask = _model_mask(source, model)
+                method = 'onnx-u2netp'
+            except MediaBlocked:
+                raise
             except Exception as exc:
                 raise MediaBlocked('Le moteur de détourage a échoué ; remplacer la photo.') from exc
         else:

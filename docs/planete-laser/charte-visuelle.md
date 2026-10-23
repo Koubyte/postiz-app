@@ -1,8 +1,8 @@
 # Planète Laser — charte éditoriale et visuelle des contenus
 
-Version : `pl-social-v1-draft` · 23 octobre 2026 · proposition à valider sur trois visuels pilotes.
+Version : `pl-social-v1` · direction approuvée le 23 octobre 2026 ; chaque contenu final reste soumis à validation.
 
-Cette charte définit un système à appliquer dans la future production. Elle n'est pas encore branchée au générateur ni approuvée par le propriétaire. La validation d'un plan éditorial autorise la rédaction ; l'approbation des contenus et leur publication restent des étapes distinctes.
+Cette charte est appliquée par le studio éditorial dans les gabarits de composition. La direction est approuvée par le propriétaire. La validation d'un plan éditorial autorise la rédaction ; l'approbation des contenus et leur publication restent des étapes distinctes.
 
 ## 1. Ancrage vérifié et direction proposée
 

@@ -20,6 +20,14 @@ finished item (both social captions, image and date displayed) before delivery.
 The pause button stops new preparation and delivery; work already in flight can
 finish. Missed delivery slots older than 30 minutes are blocked for rescheduling.
 
+Adding a product request only adds it to the pending queue. The owner can revise
+one selected plan slot with an instruction and/or pending product request before
+approving the plan. A durable job changes only that brief, retaining the other
+six briefs, blog and schedule. Stale/concurrent changes are rejected; failure
+keeps the previous plan. Replaced requests return to the pending queue, and the
+minimum of three distinct products remains enforced. After drafting, individual
+content edits or correction requests invalidate only that item’s approval.
+
 Drafting has no publishing tools. The separate delivery path rechecks exact
 revision/hash, source media hashes, catalogue prices when displayed, and stock
 status. Altering content/date clears approval; visual title changes rerender.
@@ -37,9 +45,11 @@ not automatically link an unpublished article; they are useful standalone
 adaptations. Statistics-driven topic optimization is not part of this version.
 
 Product photography is preserved as a protected RGB layer. Existing transparency
-or a conservative white-background mask is used; ambiguous masks and supplier
-image restrictions block output. Optional rembg with an explicitly provisioned
-local model is supported, but is not required or downloaded at runtime. The
+or the pinned U2netp model through direct ONNXRuntime CPU inference is used;
+ambiguous masks and supplier image restrictions block output. The model is
+provisioned and SHA-256 checked at image build and checked again before loading.
+A conservative white-background fallback applies only without a model. Nothing
+is downloaded implicitly at runtime. The
 owner reviews the source and composition before approving media rights/fidelity.
 A product whose photo cannot be safely composed remains blocked, never replaced
 by a fictitious product. Backgrounds use the existing Codex OAuth image bridge.

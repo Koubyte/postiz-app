@@ -60,7 +60,7 @@ class Generator:
         return products
     def match(self,query,products):
         q=query.casefold().strip()
-        exact=[p for p in products if q in (p['id'].casefold(),p['title'].casefold(),p['ean'])]
+        exact=[p for p in products if q in (p['id'].casefold(),p['title'].casefold(),p['ean'],p.get('url','').casefold())]
         if len(exact)==1:return exact[0]
         numbers=re.findall(r'\b\d{8,14}\b',q)
         if numbers:
@@ -105,6 +105,47 @@ class Generator:
             for p in preferred:
                 db.execute("UPDATE requests SET status='in_plan',week_id=? WHERE id=?",(week_id,p['request_id']))
             self.store.event(db,'Le plan de la semaine est prêt : sept sujets et un article à valider.')
+    def revise(self,change_id):
+        with self.store.db() as db:
+            change=dict(db.execute('SELECT * FROM plan_changes WHERE id=?',(change_id,)).fetchone())
+            week=dict(db.execute('SELECT * FROM weeks WHERE id=?',(change['week_id'],)).fetchone())
+            if change['status']=='done':return
+            if week['status']!='revising' or week['revision']!=change['revision']:raise Conflict('Le plan a changé pendant la modification.')
+            request=dict(db.execute('SELECT * FROM requests WHERE id=?',(change['request_id'],)).fetchone()) if change['request_id'] else None
+        plan=json.loads(week['plan']);slot=change['slot'];original=plan['subjects'][slot]
+        products=plan['products'];selected=None
+        if request:
+            if request['status']!='pending':raise Conflict('Cette demande produit n’est plus en attente.')
+            product=self.match(request['query'],self.products()) or self.resolve_external(request['query'])
+            if not product:raise GenerationError('Produit non identifié avec certitude. Le plan est conservé ; précisez le modèle ou le lien fabricant.')
+            if any(s.get('product_id')==product['id'] for s in plan['subjects'] if s['slot']!=slot) or plan['article'].get('product_id')==product['id']:
+                raise Conflict('Ce produit est déjà utilisé ailleurs dans la semaine. Modifiez son créneau existant pour préserver les autres contenus.')
+            selected={**product,'request_id':request['id'],'note':request['note'],'price_mode':request['price_mode'],'custom_price':request['price']}
+            products=[p for p in products if p['id']!=selected['id']]+[selected]
+        value=self.ask('Révisez UNIQUEMENT un sujet du plan éditorial, selon la consigne du propriétaire. Ne rédigez pas le post final. Les six autres sujets et le blog sont fixes. Conservez la référence actuelle sauf si une nouvelle demande produit est fournie ou si la consigne demande un conseil sans produit (le minimum de trois produits reste obligatoire). Un nouveau produit demandé impose kind=product et son product_id exact. Ne changez pas la date.\nSujet actuel:'+dumps(original)+'\nConsigne:'+change['instruction']+'\nNouvelle demande produit:'+dumps(selected)+'\nProduits disponibles:'+dumps(products)+'\nAutres sujets (contexte seulement):'+dumps([s for s in plan['subjects'] if s['slot']!=slot])+'\nRetournez {"subject":{"kind":"product|advice|news","title":str,"angle":str,"product_id":str|null,"scene":str},"sources":[{"title":str,"url":str}]}.')
+        subject=value.get('subject')
+        if not isinstance(subject,dict):raise GenerationError('La modification du sujet est inexploitable.')
+        if selected and (subject.get('product_id')!=selected['id'] or subject.get('kind')!='product'):raise GenerationError('Le nouveau sujet doit mettre en avant le produit demandé.')
+        subject={**subject,'slot':slot,'scheduled_at':original['scheduled_at']}
+        updated={**plan,'subjects':[subject if i==slot else s for i,s in enumerate(plan['subjects'])]}
+        # Requests displaced by an explicit replacement return to the pending queue.
+        used={s.get('product_id') for s in updated['subjects']}
+        displaced=[p.get('request_id') for p in products if p.get('request_id') and p['id'] not in used]
+        products=[{k:v for k,v in p.items() if k!='request_id'} if p.get('request_id') in displaced else p for p in products]
+        checked=validate_plan(updated,products,week['week'])
+        # Only the selected subject is normalized; every other brief is byte-for-byte preserved.
+        updated['subjects'][slot]=checked['subjects'][slot]
+        updated['products']=products
+        updated['sources']=safe_sources(plan.get('sources',[])+safe_sources(value.get('sources',[])))
+        if request:updated['unresolved_requests']=[r for r in plan.get('unresolved_requests',[]) if r.get('id')!=request['id']]
+        with self.store.db() as db:
+            current=db.execute('SELECT revision,status FROM weeks WHERE id=?',(week['id'],)).fetchone()
+            if current['revision']!=change['revision'] or current['status']!='revising':raise Conflict('Le plan a changé pendant la modification.')
+            db.execute("UPDATE weeks SET plan=?,revision=revision+1,status='plan_review',error=NULL WHERE id=?",(dumps(updated),week['id']))
+            db.execute("UPDATE plan_changes SET status='done' WHERE id=?",(change_id,))
+            for request_id in displaced:db.execute("UPDATE requests SET status='pending',week_id=NULL WHERE id=? AND week_id=?",(request_id,week['id']))
+            if request:db.execute("UPDATE requests SET status='in_plan',week_id=? WHERE id=?",(week['id'],request['id']))
+            self.store.event(db,'Post '+str(slot+1)+' modifié. Les six autres sujets et le blog sont conservés ; le plan reste à valider.')
     def draft(self,id):
         item=self.store.item(id)
         with self.store.db() as db:plan=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(item['week_id'],)).fetchone()[0])

@@ -246,3 +246,79 @@ def test_research_can_never_set_publication_status(store,monkeypatch):
     item=store.item(id)
     assert item['status']=='rendering' and not item['approval_hash']
     assert 'approval_hash' not in item['content'] and 'status' not in item['content']
+
+
+def create_plan(store):
+    week=store.prepare('2030-10-28')
+    products=[{'id':str(i),'title':'Produit '+str(i),'ean':'','price_mode':'hide'} for i in range(3)]
+    plan=validate_plan({'subjects':[{'slot':i,'kind':'product' if i<3 else 'advice','title':'Sujet '+str(i),'angle':'Angle original','product_id':str(i) if i<3 else None,'scene':'Bois et lumière'} for i in range(7)],'article':{'title':'Blog intact','angle':'Conseil précis','product_id':None,'social_slot':6}},products,'2030-10-28')
+    plan.update(products=products,sources=[],brand_version='pl-social-v1',unresolved_requests=[])
+    with store.db() as db:db.execute("UPDATE weeks SET plan=?,status='plan_review' WHERE id=?",(dumps(plan),week))
+    return week,plan
+
+
+def test_revise_only_one_subject_preserves_six_and_blog(store,monkeypatch):
+    week,plan=create_plan(store)
+    change=store.revise_subject(week,4,1,'Un conseil sur la lumière',None,'owner')
+    gen=Generator(store)
+    monkeypatch.setattr(gen,'ask',lambda _: {'subject':{**plan['subjects'][4],'title':'Nouveau conseil','slot':0,'scheduled_at':'2099-01-01'}})
+    gen.revise(change)
+    # Retrying an already completed job is harmless.
+    gen.revise(change)
+    with store.db() as db:
+        row=db.execute('SELECT * FROM weeks WHERE id=?',(week,)).fetchone();updated=json.loads(row['plan'])
+        assert row['status']=='plan_review' and row['revision']==2
+        assert db.execute('SELECT count(*) FROM items').fetchone()[0]==0
+    assert updated['article']==plan['article']
+    assert all(updated['subjects'][i]==plan['subjects'][i] for i in range(7) if i!=4)
+    assert updated['subjects'][4]['title']=='Nouveau conseil'
+    assert updated['subjects'][4]['scheduled_at']==plan['subjects'][4]['scheduled_at']
+    assert updated['subjects'][4]['slot']==4
+
+
+def test_targeted_product_replacement_consumes_only_chosen_request(store,monkeypatch):
+    week,plan=create_plan(store)
+    with store.db() as db:
+        for id in ('chosen','other'):
+            db.execute("INSERT INTO requests(id,query,note,price_mode,priority,created) VALUES(?,?,'','hide',1,'today')",(id,id))
+    gen=Generator(store)
+    product={'id':'new','title':'chosen','ean':'','url':'https://example.com/product'}
+    monkeypatch.setattr(gen,'products',lambda: [product])
+    monkeypatch.setattr(gen,'ask',lambda _: {'subject':{**plan['subjects'][0],'title':'Produit demandé','product_id':'new'}})
+    change=store.revise_subject(week,0,1,'','chosen','owner');gen.revise(change)
+    with store.db() as db:
+        updated=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(week,)).fetchone()[0])
+        assert db.execute("SELECT status FROM requests WHERE id='chosen'").fetchone()[0]=='in_plan'
+        assert db.execute("SELECT status FROM requests WHERE id='other'").fetchone()[0]=='pending'
+    assert updated['subjects'][1:]==plan['subjects'][1:] and updated['article']==plan['article']
+    assert updated['subjects'][0]['product_id']=='new'
+
+
+def test_failed_single_revision_preserves_plan_and_request(store,monkeypatch):
+    week,plan=create_plan(store);gen=Generator(store)
+    change=store.revise_subject(week,0,1,'Retirer le produit',None,'owner')
+    monkeypatch.setattr(gen,'ask',lambda _: {'subject':{**plan['subjects'][0],'kind':'advice','product_id':None}})
+    with pytest.raises(GenerationError,match='trois produits'):gen.revise(change)
+    with store.db() as db:
+        store.fail_revision(db,change,'Minimum de trois produits requis.')
+        row=db.execute('SELECT * FROM weeks WHERE id=?',(week,)).fetchone()
+        assert row['status']=='plan_review' and row['revision']==1 and json.loads(row['plan'])==plan
+
+
+def test_targeted_revision_rejects_stale_and_concurrent_changes(store):
+    week,plan=create_plan(store)
+    with pytest.raises(Conflict):store.revise_subject(week,0,2,'test',None,'owner')
+    with pytest.raises(Conflict):store.revise_subject(week,8,1,'test',None,'owner')
+    with pytest.raises(Conflict):store.revise_subject(week,0,1,'','unknown','owner')
+    store.revise_subject(week,0,1,'test',None,'owner')
+    with pytest.raises(Conflict):store.revise_subject(week,1,1,'test',None,'owner')
+
+
+def test_restart_failed_revision_unlocks_unchanged_plan(store):
+    week,plan=create_plan(store)
+    change=store.revise_subject(week,3,1,'Conseil différent',None,'owner')
+    with store.db() as db:db.execute("UPDATE jobs SET status='running',attempts=2 WHERE target=?",(change,))
+    store.recover()
+    with store.db() as db:
+        row=db.execute('SELECT * FROM weeks WHERE id=?',(week,)).fetchone()
+        assert row['status']=='plan_review' and json.loads(row['plan'])==plan

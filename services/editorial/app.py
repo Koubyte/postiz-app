@@ -36,7 +36,7 @@ def work():
             if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
             if job['kind']=='draft':db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
-            {'plan':generator.plan,'draft':generator.draft,'render':generator.render}[job['kind']](job['target'])
+            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -46,8 +46,11 @@ def work():
                 # Bounded retries for generation only. Publishing is a separate path.
                 retry=job['attempts']<1
                 db.execute('UPDATE jobs SET status=?,updated=? WHERE id=?',('queued' if retry else 'failed',now(),job['id']))
-                table='weeks' if job['kind']=='plan' else 'items'
-                db.execute(f"UPDATE {table} SET status='failed',error=? WHERE id=?",(message,job['target']))
+                if job['kind']=='revise':
+                    if not retry:store.fail_revision(db,job['target'],message)
+                else:
+                    table='weeks' if job['kind']=='plan' else 'items'
+                    db.execute(f"UPDATE {table} SET status='failed',error=? WHERE id=?",(message,job['target']))
                 store.event(db,message)
                 if not retry:db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
 
@@ -161,6 +164,8 @@ async def state(request:Request):
                     item[field]='/editorial/media/'+item['media'][key] if item['media'].get(key) else None
                 item['deliveries']=[{**dict(r),'result':json.loads(r['result'])} for r in db.execute('SELECT * FROM deliveries WHERE item_id=?',(item['id'],))]
                 week['items'].append(item)
+            change=db.execute("SELECT slot FROM plan_changes WHERE week_id=? AND status='queued' ORDER BY created DESC LIMIT 1",(week['id'],)).fetchone()
+            week['pending_slot']=change['slot'] if change else None
             weeks.append(week)
         reqs=[dict(r) for r in db.execute('SELECT * FROM requests ORDER BY created DESC LIMIT 100')]
         events=[dict(r) for r in db.execute('SELECT * FROM events ORDER BY id DESC LIMIT 40')]
@@ -197,6 +202,11 @@ async def pause(request:Request):
     with store.db() as db:
         db.execute("UPDATE settings SET value=? WHERE key='paused'",('true' if data['paused'] else 'false',));store.event(db,'Préparation et publication suspendues.' if data['paused'] else 'Préparation et publication reprises.',who)
     return {'ok':True}
+
+@app.post('/editorial/api/weeks/{id}/subjects/{slot}/revise')
+async def revise_subject(id:str,slot:int,request:Request):
+    who=await actor(request);data=await body(request)
+    return {'id':store.revise_subject(id,slot,data.get('revision'),data.get('instruction',''),data.get('request_id'),who)}
 
 @app.post('/editorial/api/weeks/{id}/save')
 @app.post('/editorial/api/weeks/{id}/approve')

@@ -6,6 +6,4 @@ The original WOFF2 fonts in `docs/planete-laser/assets` were decoded and statica
 
 Runtime dependency: Pillow. Source downloads use the service’s shared `net.public_bytes` public-address-pinned downloader.
 
-Optional segmentation: install `rembg[cpu]` and provision `u2netp.onnx` in the directory set by `U2NET_HOME` (default `/models`) during image build. The model is never downloaded on a content request. Without that file, the renderer uses supplied transparency or a conservative edge-connected-white packshot mask; complex backgrounds block content. Both methods preserve source RGB and require human source/mask/output review.
-
-A successful render does not constitute visual approval or verification of image licensing. Source, mask, background, final social and blog images, and SHA-256 provenance are retained. A provider `image_mask_required` flag blocks that source instead of removing a watermark or protective mask.
+Segmentation uses direct ONNXRuntime CPU inference with U2netp. The Docker build provisions `/models/u2netp.onnx` from the official rembg model release and checks SHA-256 `309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8` (4,574,861 bytes). The renderer repeats that integrity check before loading and limits inference to one CPU thread. No rembg package or runtime download is used. Without a local model, supplied transparency or a conservative edge-connected-white packshot mask is used; complex backgrounds block content. All methods preserve source RGB and require human source/mask/output review.
