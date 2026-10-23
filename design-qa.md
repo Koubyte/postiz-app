@@ -43,7 +43,7 @@ The full comparison at normalized mobile size is readable for this low-density s
 ## Residual test gaps
 
 - Real iPhone/Android keyboard behavior and physical microphone capture require an actual device. The browser viewport tests do not simulate phone hardware.
-- Production verification follows deployment; no real post is approved or published during this UI change.
+- Production verified after deployment: authenticated empty conversation and existing two-post conversation load, inline content is present, browser reports no errors, no horizontal overflow at 390 × 844, and the editorial container is healthy. Evidence: `/home/koubyte/.local/share/postiz/studio-mobile-live.png`. No real post was approved or published during this UI change.
 
 ## Implementation checklist
 
