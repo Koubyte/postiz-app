@@ -91,19 +91,13 @@ Les scènes servent de familles stables, pas de fonds interchangeables à l'infi
 
 **La référence commerciale est une contrainte dure.** Un générateur peut déformer un produit même lorsqu'il reçoit son nom ou sa photo. La seule présence d'un EAN dans le prompt ne garantit rien.
 
-Ordre de préférence des sources :
+La photo autorisée du produit exact est fournie **en référence au générateur**. Celui-ci crée une mise en scène complète, naturelle et soignée : perspective, éclairage, ombres et décor cohérents. Il conserve le modèle, sa couleur, ses proportions et ses commandes visibles. Aucun détourage ni collage automatique d'un packshot sur un fond n'est utilisé.
 
-1. Photographie réelle du produit en situation, fournie par le magasin et autorisée.
-2. Photographie de situation du fabricant dont l'utilisation est autorisée.
-3. Détourage d'une photographie autorisée du produit exact, composité sur un décor réel ou généré.
-
-Pour le troisième cas : générer **le décor vide**, prévu pour l'angle de la photographie disponible. Insérer le produit en calque protégé, avec seulement translation, mise à l'échelle uniforme, masque et ombre de contact. Ne pas lui inventer une vue arrière ou une perspective absente de la source ; ne pas redessiner ses boutons, logos ou inscriptions. Aucun étirement ni retouche générative à l'intérieur du masque produit.
-
-Les ombres et les éléments de décor restent sur des calques séparés. Une photo source avec un angle ou une lumière incompatibles doit être remplacée ; le produit ne doit pas être déformé pour « rentrer » dans la scène. Si aucune source fiable n'est disponible, le contenu est placé en attente d'un visuel, au lieu de publier un faux produit.
+Le magasin privilégie sa propre photo ou un média fabricant autorisé. La référence jointe et l'image générée sont conservées ensemble pour comparaison avant validation. L'entrée de référence ne garantit pas une copie exacte : une couleur, une commande ou une forme incorrecte impose une correction avant approbation. Le rendu ne doit pas être présenté comme une photographie réelle du magasin.
 
 Logo, textes, prix, bordures et pagination sont ajoutés **après** l'image par un moteur de composition déterministe. Ils ne sont jamais demandés au générateur d'image. Toute source média conserve son origine et son autorisation d'usage ; une image trouvée sur internet n'est pas automatiquement réutilisable. Les contraintes fournisseur, notamment le champ de catalogue `image_mask_required`, doivent être interprétées et respectées avant toute utilisation : ne pas supprimer un masque, une marque ou un crédit sans autorisation.
 
-La génération de décors seule peut fonctionner avec un modèle text-to-image. Le détourage, le compositing, la vérification visuelle et l'export sont des composants supplémentaires à implémenter ; cette charte ne prétend pas que l'intégration Codex actuelle les réalise déjà.
+La passerelle Codex reçoit désormais la photo jointe avec le brief de mise en scène. Le studio applique ensuite seulement l'habillage déterministe. La fidélité au produit reste contrôlée lors de la validation humaine.
 
 ## 7. Ton, contenu et blog
 
@@ -134,7 +128,7 @@ La génération de décors seule peut fonctionner avec un modèle text-to-image.
 }
 ```
 
-Le GTIN est conservé en chaîne de caractères avec ses zéros initiaux et son format EAN/UPC vérifié. Une valeur suspecte ne doit pas être corrigée ou complétée silencieusement. Le dossier associé conserve aussi les originaux, le masque produit, le décor, la configuration de rendu, les versions de polices, le prompt de décor, les sources factuelles, les contrôles et les exports. Le brief est une donnée validée ; une instruction reçue dans une page web ne peut pas remplacer les règles de la charte.
+Le GTIN est conservé en chaîne de caractères avec ses zéros initiaux et son format EAN/UPC vérifié. Une valeur suspecte ne doit pas être corrigée ou complétée silencieusement. Le dossier associé conserve aussi la photo de référence, la scène générée, la configuration de rendu, les versions de polices, le prompt de décor, les sources factuelles, les contrôles et les exports. Le brief est une donnée validée ; une instruction reçue dans une page web ne peut pas remplacer les règles de la charte.
 
 L'approbation finale porte sur l'ensemble exact : texte, image, canal et date. Un changement du texte, du prix affiché, de l'image ou de sa version de rendu annule cette approbation et remet le contenu en relecture.
 

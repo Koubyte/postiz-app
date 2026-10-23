@@ -5,10 +5,11 @@ import OpenAI from 'openai';
 import { prepare } from './protocol.mjs';
 import { createBridge } from './server.mjs';
 import { codexArgs, runCodex, webSearchMode } from './runner.mjs';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, stat, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareImage, imageResponse } from './images.mjs';
+import { prepareImage, prepareReferenceImage, imageResponse, runImage, MAX_REFERENCE_BYTES } from './images.mjs';
 
 const messages = [{ role: 'user', content: 'Write a short French post.' }];
 const output = (content, tool_calls = []) => JSON.stringify({ choices: [{ content, tool_calls }] });
@@ -180,6 +181,87 @@ test('images reject missing prompts, batches, URL responses, errors and non-imag
   for (const body of [{}, { prompt: 'x', n: 2 }, { prompt: 'x', response_format: 'url' }]) assert.throws(() => prepareImage(body));
   assert.throws(() => imageResponse({ status: 'failed', result: png }));
   assert.throws(() => imageResponse({ status: 'completed', result: Buffer.from('secret text').toString('base64') }));
+});
+
+test('one reference photo is validated by encoding, MIME, signature and decoded size', () => {
+  const reference = prepareReferenceImage({ mime_type: 'image/png', b64_json: png });
+  assert.equal(reference.extension, 'png');
+  assert.equal(reference.bytes.toString('base64'), png);
+  assert.equal(reference.sha256, createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex'));
+  const webp = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+  assert.equal(prepareReferenceImage({ mime_type: 'image/webp', b64_json: webp }).extension, 'webp');
+  assert.equal(prepareReferenceImage(undefined), undefined);
+  for (const value of [null, [], [{ mime_type: 'image/png', b64_json: png }], {}, { mime_type: 'image/jpeg', b64_json: png }, { mime_type: 'image/svg+xml', b64_json: png }, { mime_type: 'image/png', b64_json: 'data:image/png;base64,' + png }, { mime_type: 'image/png', b64_json: png + '\n' }, { mime_type: 'image/png', b64_json: '!!!!' }, { mime_type: 'image/png', b64_json: png, path: '/private/file' }, { mime_type: 'image/webp', b64_json: Buffer.from('RIFF----WEBPwrong').toString('base64') }]) {
+    assert.throws(() => prepareImage({ prompt: 'Scene', reference_image: value }), e => e.code === 'invalid_reference_image');
+  }
+  assert.throws(() => prepareReferenceImage({ mime_type: 'image/png', b64_json: Buffer.alloc(MAX_REFERENCE_BYTES + 1).toString('base64') }), e => e.status === 413);
+});
+
+test('image endpoint forwards a validated reference while invalid inputs never reach the runner', async t => {
+  let calls = 0;
+  const { baseURL } = await fixture(t, { imageRunner: async ({ prompt, referenceImage }) => {
+    calls++;
+    assert.equal(referenceImage.bytes.toString('base64'), png);
+    assert.match(prompt, /actual image input/);
+    assert.match(prompt, /Do not perform a cutout/);
+    return imageResponse({ status: 'completed', result: png });
+  } });
+  const post = reference_image => fetch(baseURL + '/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'A faithful product in a studio', reference_image }) });
+  assert.equal((await post({ mime_type: 'image/png', b64_json: png })).status, 200);
+  assert.equal((await post({ mime_type: 'image/jpeg', b64_json: png })).status, 400);
+  assert.equal(calls, 1);
+});
+
+test('app-server receives the reference as a private localImage, returns its hash and cleans it', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'postiz-image-rpc-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const capturePath = join(directory, 'capture.json');
+  const executable = join(directory, 'fake-codex');
+  await writeFile(executable, `#!${process.execPath}
+import fs from 'node:fs';
+import readline from 'node:readline';
+const lines=readline.createInterface({input:process.stdin});
+const reply=(id,result)=>console.log(JSON.stringify({id,result}));
+lines.on('line',line=>{
+  const call=JSON.parse(line);
+  if(call.method==='initialize')reply(call.id,{});
+  if(call.method==='thread/start')reply(call.id,{thread:{id:'image-thread'}});
+  if(call.method==='turn/start'){
+    const ref=call.params.input.find(part=>part.type==='localImage');
+    fs.writeFileSync(${JSON.stringify(capturePath)},JSON.stringify({input:call.params.input,args:process.argv.slice(2),reference:ref?fs.readFileSync(ref.path).toString('base64'):null,mode:ref?(fs.statSync(ref.path).mode&0o777):null,apiKeyInherited:!!process.env.OPENAI_API_KEY}));
+    reply(call.id,{turn:{id:'image-turn'}});
+    console.log(JSON.stringify({method:'item/completed',params:{item:{type:'imageGeneration',status:'completed',result:${JSON.stringify(png)}}}}));
+  }
+});
+`, { mode: 0o700 });
+  const referenceImage = prepareReferenceImage({ mime_type: 'image/png', b64_json: png });
+  const result = await runImage({ prompt: prepareImage({ prompt: 'Product in a beautiful studio', reference_image: { mime_type: 'image/png', b64_json: png } }), referenceImage }, { CODEX_BIN: executable, CODEX_HOME: directory, OPENAI_API_KEY: 'must-not-pass' });
+  const actual = JSON.parse(await readFile(capturePath, 'utf8'));
+  const ref = actual.input.find(part => part.type === 'localImage');
+  assert.equal(actual.reference, png);
+  assert.equal(actual.mode, 0o600);
+  assert.equal(actual.apiKeyInherited, false);
+  assert.equal(result.reference_image_sha256, referenceImage.sha256);
+  assert.equal(result.data[0].b64_json, png);
+  assert.match(actual.input[0].text, /referenced_image_paths/);
+  assert.ok(actual.input[0].text.includes(JSON.stringify([ref.path])));
+  for (const disabled of ['features.shell_tool=false', 'features.unified_exec=false', 'features.multi_agent=false', 'features.apps=false', 'features.plugins=false', 'features.view_image=false', 'web_search="disabled"']) assert.ok(actual.args.includes(disabled));
+  await assert.rejects(stat(ref.path), e => e.code === 'ENOENT');
+  const withoutReference = await runImage({ prompt: prepareImage({ prompt: 'Empty studio' }) }, { CODEX_BIN: executable, CODEX_HOME: directory });
+  assert.equal(Object.hasOwn(withoutReference, 'reference_image_sha256'), false);
+  assert.equal(JSON.parse(await readFile(capturePath, 'utf8')).input.length, 1);
+});
+
+test('image-only request budget supports photos above 1 MiB; text keeps its existing limit', async t => {
+  let calls = 0;
+  const { baseURL } = await fixture(t, { imageRunner: async () => { calls++; return imageResponse({status:'completed',result:png}); } });
+  const payload = Buffer.concat([Buffer.from(png,'base64'),Buffer.alloc(1024*1024)]).toString('base64');
+  const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
+  const photo = await fetch(baseURL+'/images/generations',{method:'POST',headers,body:JSON.stringify({prompt:'Scene',reference_image:{mime_type:'image/png',b64_json:payload}})});
+  assert.equal(photo.status,200);
+  const text = await fetch(baseURL+'/chat/completions',{method:'POST',headers,body:JSON.stringify({messages:[{role:'user',content:'a'.repeat(1024*1024)}]})});
+  assert.equal(text.status,413);
+  assert.equal(calls,1);
 });
 
 

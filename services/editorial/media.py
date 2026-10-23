@@ -1,37 +1,27 @@
-"""Deterministic Planète Laser assets; product RGB is never generated or retouched.
+"""Apply the Planète Laser charter to a complete reference-guided scene.
 
-Backgrounds are generated separately. Approval must include the saved source,
-mask and final composition: a segmentation mask cannot prove product identity.
+The generator receives the exact product reference before this renderer runs.
+No product is segmented, pasted or reconstructed here. Approval includes the
+source photo and generated scene because reference input cannot guarantee fidelity.
 """
 from __future__ import annotations
 
 import hashlib
 import io
 import json
-import os
 import uuid
-from collections import deque
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 
 ASSETS = Path(__file__).with_name('media-assets')
 BRAND_VERSION = 'pl-social-v1'
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
-MODEL_SHA256 = '309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8'
-MODEL_BYTES = 4574861
-_MODEL_SESSIONS = {}
 Image.MAX_IMAGE_PIXELS = 24_000_000
 
 
 class MediaBlocked(ValueError):
     """Content needs a replacement source or a human visual decision."""
-
-
-def public_bytes(url: str, limit: int = MAX_IMAGE_BYTES) -> bytes:
-    # Shared downloader pins public DNS addresses and revalidates redirects.
-    from net import public_bytes as download
-    return download(url, limit=limit)
 
 
 def _decode(data: bytes) -> Image.Image:
@@ -47,103 +37,6 @@ def _decode(data: bytes) -> Image.Image:
         raise
     except Exception as exc:
         raise MediaBlocked('Image source invalide.') from exc
-
-
-def _white_mask(image: Image.Image) -> Image.Image:
-    """Remove only near-white pixels connected to the edge, never enclosed whites.
-
-    Conservative fallback for clean packshots; human mask review is mandatory.
-    No source colors are changed. Work on a bounded thumbnail to limit memory.
-    """
-    small = image.convert('RGB')
-    small.thumbnail((1200, 1200))
-    w, h = small.size
-    pix = small.load()
-    def white(x, y):
-        r, g, b = pix[x, y]
-        return min(r, g, b) >= 245 and max(r, g, b) - min(r, g, b) <= 8
-    edge = [(x, 0) for x in range(w)] + [(x, h-1) for x in range(w)]
-    edge += [(0, y) for y in range(h)] + [(w-1, y) for y in range(h)]
-    if sum(white(x, y) for x, y in edge) / len(edge) < .95:
-        raise MediaBlocked('Détourage ambigu : fournir une photo détourée ou un packshot clair.')
-    seen = bytearray(w*h)
-    queue = deque()
-    for x, y in edge:
-        index = y*w+x
-        if not seen[index] and white(x, y):
-            seen[index] = 1
-            queue.append((x, y))
-    while queue:
-        x, y = queue.popleft()
-        for xx, yy in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
-            if 0 <= xx < w and 0 <= yy < h:
-                index = yy*w+xx
-                if not seen[index] and white(xx, yy):
-                    seen[index] = 1
-                    queue.append((xx, yy))
-    mask = Image.frombytes('L', (w,h), bytes(0 if value else 255 for value in seen))
-    return mask.resize(image.size, Image.Resampling.NEAREST)
-
-
-def _model_mask(source: Image.Image, model: Path) -> Image.Image:
-    """Run the pinned local U2netp graph directly; no download/client is involved."""
-    import numpy as np
-    if model.stat().st_size != MODEL_BYTES or hashlib.sha256(model.read_bytes()).hexdigest() != MODEL_SHA256:
-        raise MediaBlocked('Le modèle de détourage local ne correspond pas à la version vérifiée.')
-    import onnxruntime as ort
-    key = str(model.resolve())
-    if key not in _MODEL_SESSIONS:
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = 1
-        options.inter_op_num_threads = 1
-        _MODEL_SESSIONS[key] = ort.InferenceSession(key, sess_options=options, providers=['CPUExecutionProvider'])
-    session = _MODEL_SESSIONS[key]
-    pixels = np.asarray(source.convert('RGB').resize((320,320), Image.Resampling.LANCZOS), dtype=np.float32)
-    pixels = pixels / max(float(pixels.max()), 1e-6)
-    pixels = (pixels - np.array([.485,.456,.406],dtype=np.float32)) / np.array([.229,.224,.225],dtype=np.float32)
-    tensor = np.ascontiguousarray(pixels.transpose(2,0,1)[None,...], dtype=np.float32)
-    outputs = session.run(None, {session.get_inputs()[0].name:tensor})
-    if not outputs or outputs[0].ndim != 4 or outputs[0].shape[0] != 1 or outputs[0].shape[1] < 1:
-        raise MediaBlocked('Le moteur de détourage a renvoyé un masque invalide.')
-    prediction = outputs[0][0,0,:,:]
-    if prediction.shape != (320,320) or not np.isfinite(prediction).all():
-        raise MediaBlocked('Le moteur de détourage a renvoyé un masque invalide.')
-    minimum, maximum = float(prediction.min()), float(prediction.max())
-    if maximum-minimum < 1e-6:
-        raise MediaBlocked('Le moteur de détourage a renvoyé un masque uniforme.')
-    alpha = np.clip((prediction-minimum)/(maximum-minimum)*255,0,255).astype(np.uint8)
-    return Image.fromarray(alpha).resize(source.size,Image.Resampling.LANCZOS)
-
-
-def _cutout(source: Image.Image) -> tuple[Image.Image, str]:
-    alpha = source.getchannel('A')
-    if alpha.getextrema()[0] < 250:
-        mask, method = alpha, 'source-alpha'
-    else:
-        model = Path(os.environ.get('U2NET_HOME', '/models')) / 'u2netp.onnx'
-        if model.is_file():
-            try:
-                mask = _model_mask(source, model)
-                method = 'onnx-u2netp'
-            except MediaBlocked:
-                raise
-            except Exception as exc:
-                raise MediaBlocked('Le moteur de détourage a échoué ; remplacer la photo.') from exc
-        else:
-            mask, method = _white_mask(source), 'edge-connected-white'
-    strong = mask.point(lambda value: 255 if value >= 200 else 0)
-    bbox = strong.getbbox()
-    fraction = ImageStat.Stat(strong).mean[0] / 255
-    if not bbox or not .015 <= fraction <= .90:
-        raise MediaBlocked('Masque produit vide, trop petit ou presque plein.')
-    x0,y0,x1,y1 = bbox
-    if min(x1-x0,y1-y0) < 24:
-        raise MediaBlocked('Produit trop petit pour une composition fidèle.')
-    if x0 == 0 or y0 == 0 or x1 == source.width or y1 == source.height:
-        raise MediaBlocked('Le produit touche le bord : photo potentiellement tronquée.')
-    product = source.copy()
-    product.putalpha(mask)
-    return product, method
 
 
 def _font(family: str, size: int) -> ImageFont.FreeTypeFont:
@@ -177,29 +70,17 @@ def _title(draw, text, xy, width, max_lines, size, min_size, color='#F7F8F8'):
     raise MediaBlocked('Titre trop long pour le gabarit ; raccourcir le titre du visuel.')
 
 
-def _scene(background: Image.Image, size: tuple[int,int], product: Image.Image | None):
-    canvas = ImageOps.fit(background.convert('RGB'), size, method=Image.Resampling.LANCZOS).convert('RGBA')
-    placement = None
-    if product is not None:
-        box = product.getchannel('A').getbbox()
-        layer = product.crop(box)
-        scale = min(size[0]*.70/layer.width, size[1]*.72/layer.height)
-        layer = layer.resize((max(1,round(layer.width*scale)),max(1,round(layer.height*scale))), Image.Resampling.LANCZOS)
-        x = (size[0]-layer.width)//2
-        y = int(size[1]*.88)-layer.height
-        shadow = Image.new('RGBA', size)
-        shade = ImageDraw.Draw(shadow)
-        shade.ellipse((x+layer.width*.08,y+layer.height-18,x+layer.width*.92,y+layer.height+25),fill=(0,0,0,110))
-        canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(18)))
-        canvas.alpha_composite(layer,(x,y))
-        placement = {'source_crop':list(box),'scale':scale,'xy':[x,y],'size':list(layer.size)}
-    return canvas, placement
+def _scene(scene: Image.Image, size: tuple[int,int]) -> Image.Image:
+    """Crop/resize the whole generated scene; never paste a product over it."""
+    return ImageOps.fit(scene.convert('RGB'), size, method=Image.Resampling.LANCZOS).convert('RGBA')
 
 
-def render_assets(*, item_id: str, product: dict | None, background: bytes, content: dict, output_dir: Path) -> dict:
+def render_assets(*, item_id: str, product: dict | None, background: bytes, content: dict, output_dir: Path, product_reference: bytes | None = None, reference_used: bool = False) -> dict:
     """Render one social master and blog cover plus immutable review evidence.
 
-    Raises MediaBlocked instead of inventing or silently omitting a product.
+    Requires explicit evidence that product_reference was used for generation.
+    `background` is the complete generated scene, including the product.
+    The caller supplies the same reference bytes it sent to the image generator.
     `price_text` is already verified by the caller; omission hides price entirely.
     Files have random names and never derive a path from item_id or product input.
     """
@@ -212,20 +93,18 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
         raise MediaBlocked('Le décor est blanc ou vide ; générer une vraie scène musicale.')
     if str(content.get('kind','')).lower() in ('store','magasin','team','équipe') and not content.get('real_scene_source'):
         raise MediaBlocked('Une publication magasin exige une photographie réelle documentée.')
-    product_image = source = None
+    source = None
     source_bytes = None
     source_url = None
-    method = None
     if product:
         if product.get('image_mask_required') not in (None, False, 0, '', 'false'):
             raise MediaBlocked('Image fournisseur protégée : utiliser une autre photo autorisée.')
-        source_url = product.get('thumbnail') or product.get('image_url')
-        if not source_url:
-            raise MediaBlocked('Aucune photo du produit exact disponible.')
-        source_bytes = public_bytes(source_url, MAX_IMAGE_BYTES)
+        if reference_used is not True or not isinstance(product_reference, bytes) or not product_reference:
+            raise MediaBlocked('La photo du produit exact doit être fournie au générateur avant la mise en scène.')
+        source_bytes = product_reference
         source = _decode(source_bytes)
-        product_image, method = _cutout(source)
-    social, social_placement = _scene(background_image,(1080,970),product_image)
+        source_url = product.get('reference_url') or product.get('thumbnail') or product.get('image_url')
+    social = _scene(background_image,(1080,970))
     master = Image.new('RGBA',(1080,1350),'#0F0F0F')
     master.alpha_composite(social,(0,0))
     draw = ImageDraw.Draw(master)
@@ -254,7 +133,7 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
     logo = Image.open(ASSETS/'logo-rect.png').convert('RGBA')
     logo.thumbnail((250,110),Image.Resampling.LANCZOS)
     master.alpha_composite(logo,(64,58))
-    blog, blog_placement = _scene(background_image,(1600,900),product_image)
+    blog = _scene(background_image,(1600,900))
     output_dir.mkdir(parents=True,exist_ok=True)
     prefix = uuid.uuid4().hex
     files = {'media':f'{prefix}-social.png','blog_media':f'{prefix}-blog.png','background_media':f'{prefix}-background.png'}
@@ -263,18 +142,20 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
     background_image.save(output_dir/files['background_media'])
     if source is not None:
         files['source_media'] = f'{prefix}-source.png'
-        files['mask_media'] = f'{prefix}-mask.png'
         source.save(output_dir/files['source_media'])
-        product_image.getchannel('A').save(output_dir/files['mask_media'])
     provenance = {
         'brand_version':BRAND_VERSION,'item_id':item_id,'source_url':source_url,
         'source_sha256':hashlib.sha256(source_bytes).hexdigest() if source_bytes else None,
         'background_sha256':hashlib.sha256(background).hexdigest(),
         'source_product_id':product.get('id') if product else None,
         'ean':product.get('ean') if product else None,
-        'mask_method':method,'product_rgb_repainted':False,
-        'product_transforms':['alpha-mask','uniform-scale','translation'] if product else [],
-        'placements':{'social':social_placement,'blog':blog_placement},
+        'image_mode':'reference-guided-generation' if product else 'scene-generation',
+        'reference_used':bool(product) and reference_used is True,
+        'product_rgb_repainted':bool(product),
+        'product_transforms':[],
+        'scene_transforms':['center-crop','uniform-scale'],
+        'scene_source_size':list(background_image.size),
+        'fidelity_requires_visual_review':bool(product),
         'price_text':price or None,'headline':headline,'alt':content.get('alt',''),
         'image_rights':product.get('image_rights','catalogue — autorisation à vérifier à la validation') if product else None,
         'requires_visual_approval':True,

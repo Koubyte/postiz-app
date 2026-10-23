@@ -1028,7 +1028,7 @@ function openItem(item) {
     el(
       'p',
       { class: 'hint' },
-      'Vérifiez la fidélité du produit, la lisibilité, le décor et les droits d’utilisation de chaque image.',
+      'L’IA a mis le produit en scène à partir de la photo de référence. Comparez le modèle, la couleur, les commandes et les proportions avant d’approuver ; vérifiez aussi la lisibilité et les droits d’utilisation.',
     ),
     badge(item.status),
   );

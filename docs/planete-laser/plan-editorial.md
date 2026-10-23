@@ -33,9 +33,9 @@ Ces rôles peuvent être des étapes spécialisées d'un même service. La prés
 
 ## Production visuelle
 
-Voir charte-visuelle.md et sa planche HTML. Pour les produits : photographie authentique, détourage puis composition dans un décor cohérent avec l'échelle, la perspective et la lumière. Le générateur peut créer le décor ; il ne doit pas réinventer l'objet, ses commandes, sa marque ou ses accessoires. Logo, typographie, prix et éléments de mise en page sont ajoutés par des gabarits déterministes versionnés.
+Voir charte-visuelle.md et sa planche HTML. Pour les produits, le générateur reçoit une photographie autorisée du modèle exact en référence et crée une scène complète, avec perspective, lumière et ombres cohérentes. Aucun détourage/collage de packshot. Logo, typographie, prix et éléments de mise en page sont ajoutés par des gabarits déterministes versionnés.
 
-La passerelle d'images actuelle ne reçoit pas d'image de référence. Il faut donc développer la composition à partir des photographies existantes, ou ajouter une voie d'édition avec référence et contrôle visuel, avant de promettre une mise en scène fidèle automatique. Une photo sans droits d'usage établis ou de qualité insuffisante bloque le visuel produit.
+La photo de référence et le résultat sont comparés avant approbation. L'IA doit conserver couleur, modèle, proportions et commandes ; cette fidélité n'est pas garantie automatiquement. Une référence non identifiée ou une photo soumise à restriction bloque le visuel.
 
 ## Blog et réseaux
 

@@ -322,3 +322,35 @@ def test_restart_failed_revision_unlocks_unchanged_plan(store):
     with store.db() as db:
         row=db.execute('SELECT * FROM weeks WHERE id=?',(week,)).fetchone()
         assert row['status']=='plan_review' and json.loads(row['plan'])==plan
+
+
+def test_reference_photo_is_sent_to_generator_and_acknowledged(store,monkeypatch):
+    import base64,io
+    from PIL import Image
+    import generation
+    reference=io.BytesIO();Image.new('RGB',(400,300),'orange').save(reference,format='PNG')
+    scene=io.BytesIO();Image.linear_gradient('L').resize((1024,1536)).convert('RGB').save(scene,format='PNG')
+    identifier=create_item(store)
+    with store.db() as db:
+        row=store.item(identifier,db)
+        product={'id':'orange-piano','title':'Piano orange','ean':'1234567890123','thumbnail':'https://example.com/piano.png','image_mask_required':False}
+        plan={'subjects':[{'kind':'product','product_id':product['id']}],'products':[product]}
+        db.execute('UPDATE weeks SET plan=? WHERE id=?',(dumps(plan),row['week_id']))
+        db.execute("UPDATE items SET content=?,status='rendering' WHERE id=?",(dumps({**row['content'],'product_id':product['id'],'scene':'Salon lumineux'}),identifier))
+    monkeypatch.setattr(generation,'public_bytes',lambda *args:reference.getvalue())
+    calls=[]
+    def bridge(path,payload,**kwargs):
+        raw=base64.b64decode(payload['reference_image']['b64_json']);calls.append(payload)
+        assert payload['reference_image']['mime_type']=='image/png'
+        assert Image.open(io.BytesIO(raw)).getpixel((100,100))[:3]==(255,165,0)
+        assert 'PHOTO DE RÉFÉRENCE JOINTE' in payload['prompt']
+        return {'reference_image_sha256':hashlib.sha256(raw).hexdigest(),'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]}
+    gen=Generator(store);monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
+    item=store.item(identifier)
+    assert len(calls)==1 and item['status']=='review' and item['approval_hash'] is None
+    assert item['media']['provenance']['image_mode']=='reference-guided-generation'
+    assert 'mask_media' not in item['media']
+    assert item['media']['source_media']
+    # An older bridge silently ignoring the reference must never create a product visual.
+    monkeypatch.setattr(gen,'bridge',lambda *args,**kwargs:{'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]})
+    with pytest.raises(GenerationError,match='référence'):gen.render(identifier)

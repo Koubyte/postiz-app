@@ -38,21 +38,27 @@ retried. Review Postiz before deciding whether to create a replacement. Delivery
 is marked published only after Postiz reports PUBLISHED on both networks.
 
 The public blog feed `/editorial/public/articles` contains only published
-projections. Draft/source/mask media require the owner's session. Only the actual
+projections. Draft/source/generated media require the owner's session. Only the actual
 published article cover is available from `/editorial/public/media/...`.
 The storefront merges this feed with its two historical guides. Social posts do
 not automatically link an unpublished article; they are useful standalone
 adaptations. Statistics-driven topic optimization is not part of this version.
 
-Product photography is preserved as a protected RGB layer. Existing transparency
-or the pinned U2netp model through direct ONNXRuntime CPU inference is used;
-ambiguous masks and supplier image restrictions block output. The model is
-provisioned and SHA-256 checked at image build and checked again before loading.
-A conservative white-background fallback applies only without a model. Nothing
-is downloaded implicitly at runtime. The
-owner reviews the source and composition before approving media rights/fidelity.
-A product whose photo cannot be safely composed remains blocked, never replaced
-by a fictitious product. Backgrounds use the existing Codex OAuth image bridge.
+Product images use reference-guided generation through the Codex OAuth image
+bridge. The exact product photograph is supplied to the generator to create a
+complete, coherent scene with that product. The renderer never cuts out or pastes
+a product: it only crops/resizes the resulting scene and applies the approved
+logo, typography, palette and optional verified price. For a product, rendering
+requires the reference bytes and an explicit acknowledgement that the generator
+used them; missing references and supplier image restrictions block output.
+
+The private reference photograph and generated scene are retained with SHA-256
+provenance, alongside social and blog exports. Generation can change product
+details even with a reference, so the owner must compare the source and scene and
+approve product fidelity and image rights before publication. A successful
+render is not a fidelity certification. Advice scenes can be generated without
+a product reference; a depiction of the actual shop still requires a real photo.
+No segmentation model, ONNX runtime or product compositing is used.
 
 Environment:
 - PUBLIC_URL: Postiz HTTPS origin, no trailing slash.

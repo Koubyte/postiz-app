@@ -1,5 +1,6 @@
 """Research and drafting have no access to publishing operations."""
 import base64
+import io
 import json
 import os
 import re
@@ -164,6 +165,7 @@ class Generator:
         uncertainty=content.pop('uncertainty','').strip()
         if uncertainty:raise GenerationError('Information à confirmer : '+uncertainty[:420])
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un coin musique chaleureux et réaliste')
+        if feedback:content['_visual_feedback']=str(feedback)[:2000]
         price_text=None
         if product and product.get('price_mode','hide')!='hide':
             if product.get('price_from') and product.get('price_mode')=='catalogue':raise GenerationError('Ce produit possède plusieurs prix. Choisissez une variante précise ou masquez le prix.')
@@ -189,16 +191,33 @@ class Generator:
         item=self.store.item(id)
         with self.store.db() as db:plan=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(item['week_id'],)).fetchone()[0])
         product=next((p for p in plan['products'] if p['id']==item['content'].get('product_id')),None)
-        prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Lumière chaleureuse naturelle, bois et matériaux mats, ambiance soignée, accents verts discrets. Aucun texte, logo, prix ou watermark. '
+        reference=None;reference_payload=None
         if product:
-            prompt+='DÉCOR VIDE destiné à recevoir ensuite une photo détourée de '+product['title']+'. Ne représentez PAS ce produit ni une imitation. Surface de présentation crédible, grande zone vide centrale au premier plan pour accueillir le produit, perspective frontale et lumière latérale douce. '
+            if product.get('image_mask_required'):raise GenerationError('Cette photo fournisseur impose une restriction. Choisissez une photo autorisée avant génération.')
+            from media import _decode
+            from PIL import Image
+            reference_source=public_bytes(product['thumbnail'],8*1024*1024)
+            photo=_decode(reference_source)
+            photo.thumbnail((2048,2048),Image.Resampling.LANCZOS)
+            buffer=io.BytesIO();photo.save(buffer,format='PNG')
+            reference=buffer.getvalue()
+            if len(reference)>8*1024*1024:raise GenerationError('Photo de référence trop volumineuse après préparation.')
+            reference_payload={'mime_type':'image/png','b64_json':base64.b64encode(reference).decode()}
+        prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Lumière chaleureuse naturelle, bois et matériaux mats, ambiance soignée, accents verts discrets. Aucun texte publicitaire, prix, habillage graphique ou watermark ajouté. Pas de fausse photo de notre magasin. Composition élégante, naturelle, photographique. Image finale 4:5, sujet principal entier dans la zone centrale, espace calme autour du sujet pour les recadrages. '
+        if product:
+            prompt+='Utilisez impérativement la PHOTO DE RÉFÉRENCE JOINTE : '+product['title']+' (EAN '+str(product.get('ean',''))+'). Créez une vraie mise en scène de CE produit dans un décor musical soigné et crédible. Le produit doit être présent dans l’image finale, posé naturellement ou utilisé de manière plausible. Préservez son modèle exact, sa couleur, ses proportions, le nombre et la disposition de ses commandes, ses logos et ses particularités visibles. Ne changez pas de variante et n’inventez pas d’accessoire fourni. Harmonisez lumière, perspective, matière et ombres pour une photographie cohérente. Ne produisez pas un décor vide, un détourage, un montage collé ou un objet transparent. Ne vous contentez pas de décrire la référence : incluez-la dans l’appel à imagegen. '
         else:prompt+='Scène pertinente illustrant ce conseil, sans marque ni produit identifiable, aucun schéma technique inventé. '
-        prompt+=str(item['content'].get('scene','Un coin de pratique musicale chaleureux.'))[:800]
-        result=self.bridge('/images/generations',{'model':'codex','prompt':prompt,'size':'1024x1536','n':1,'response_format':'b64_json'},timeout=340)
+        prompt+='Direction du décor (adaptez toute ancienne mention de surface vide : le produit doit être intégré dans la scène finale) : '+str(item['content'].get('scene','Un coin de pratique musicale chaleureux.'))[:800]
+        if item['content'].get('_visual_feedback'):prompt+='\nCorrection souhaitée : '+item['content']['_visual_feedback']
+        payload={'model':'codex','prompt':prompt,'size':'1024x1536','n':1,'response_format':'b64_json'}
+        if reference_payload:payload['reference_image']=reference_payload
+        result=self.bridge('/images/generations',payload,timeout=340)
+        reference_used=bool(reference and result.get('reference_image_sha256')==hashlib.sha256(reference).hexdigest())
+        if product and not reference_used:raise GenerationError('La génération n’a pas confirmé la réception de la photo de référence. Aucun visuel produit retenu.')
         try:background=base64.b64decode(result['data'][0]['b64_json'],validate=True)
         except (ValueError,KeyError,IndexError):raise GenerationError('Le visuel généré est invalide.')
         brief=plan['article'] if item['kind']=='blog' else plan['subjects'][item['slot']]
-        assets=render_assets(item_id=id+'-r'+str(item['revision']),product=product,background=background,content={**item['content'],'kind':brief.get('kind','advice')},output_dir=self.store.root/'media')
+        assets=render_assets(item_id=id+'-r'+str(item['revision']),product=product,background=background,content={**item['content'],'kind':brief.get('kind','advice')},output_dir=self.store.root/'media',product_reference=reference,reference_used=reference_used)
         # Seal all approval-visible assets, never accept replacement bytes after approval.
         hashes={}
         for key in ('media','blog_media','source_media','mask_media','background_media'):

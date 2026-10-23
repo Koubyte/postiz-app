@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { BridgeError, prepare, streamChunks } from './protocol.mjs';
 import { runCodex, webSearchMode } from './runner.mjs';
-import { prepareImage, runImage } from './images.mjs';
+import { prepareImage, prepareReferenceImage, runImage, MAX_IMAGE_REQUEST_BYTES } from './images.mjs';
 import { createLimiter } from './limiter.mjs';
 
 export function createBridge({ token, runner = runCodex, imageRunner = runImage, maxActive = 2, maxQueued = 8, webSearch = webSearchMode() } = {}) {
@@ -26,16 +26,18 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
       let size = 0, chunks = [];
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 1024 * 1024) throw new BridgeError(413, 'request_too_large', 'Request exceeds 1 MiB.');
+        const limit = isImage ? MAX_IMAGE_REQUEST_BYTES : 1024 * 1024;
+        if (size > limit) throw new BridgeError(413, 'request_too_large', `Request exceeds ${isImage ? '12' : '1'} MiB.`);
         chunks.push(chunk);
       }
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString()); }
       catch { throw new BridgeError(400, 'invalid_json', 'Invalid JSON request.'); }
       if (isImage) {
-        const prompt = prepareImage(body);
+        const referenceImage = prepareReferenceImage(body?.reference_image);
+        const prompt = prepareImage(body, referenceImage);
         release = await acquireImage(controller.signal);
-        const result = await imageRunner({ prompt, signal: controller.signal });
+        const result = await imageRunner({ prompt, referenceImage, signal: controller.signal });
         if (!controller.signal.aborted) json(200, result);
         return;
       }
