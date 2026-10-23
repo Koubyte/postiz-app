@@ -15,6 +15,7 @@ from generation import Generator, GenerationError, validate_plan, validate_conte
 from publisher import Publisher
 from media import MediaBlocked
 from conversation import Conversation
+from companion import Companion
 from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
 from spacing import calendar_times as read_calendar, reservations, available_slot
 
@@ -23,6 +24,7 @@ store=Store(os.environ.get('EDITORIAL_DATA','/data'))
 generator=Generator(store)
 publisher=Publisher(store,generator)
 conversation=Conversation(store,generator)
+companion=Companion(store,generator)
 stop=threading.Event()
 
 def calendar_times(exclude_ids=()):return read_calendar(publisher,exclude_ids)
@@ -44,9 +46,9 @@ def work(chat_only=False):
             db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?",(now(),job['id']))
             if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
             if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
-            if job['kind'] in ('draft','demand'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
+            if job['kind'] in ('draft','demand','companion'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
-            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft}[job['kind']](job['target'])
+            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -278,7 +280,7 @@ async def item_action(id:str,request:Request):
                 if proposed!=item['scheduled_at']:
                     label=datetime.fromisoformat(proposed).astimezone(PARIS).strftime('%d/%m à %H:%M')
                     raise Conflict('Ce créneau est trop proche d’un autre sujet. Enregistrez un nouvel horaire, par exemple le '+label+' (Paris), puis validez.')
-        store.approve_item(id,data.get('revision'),who,data.get('media_reviewed'))
+        store.approve_item(id,data.get('revision'),who,data.get('media_reviewed'),data.get('create_blog',False))
     else:
         with store.db() as db:
             item=store.item(id,db);store.check_revision(item,data.get('revision'))

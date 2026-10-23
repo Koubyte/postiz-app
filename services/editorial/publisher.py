@@ -17,6 +17,8 @@ class Publisher:
     def check(self,item):
         if not item['approval_hash'] or item['approval_hash']!=self.store.content_hash(item):raise Conflict('La version ne correspond plus à celle approuvée.')
         with self.store.db() as db:
+            from companion import check_publication
+            check_publication(self.store,db,item)
             demand=db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(item['id'],)).fetchone()
         if demand and item['kind']=='social':
             from spacing import calendar_times,reservations,available_slot
@@ -52,6 +54,11 @@ class Publisher:
             c=item['content'];base=os.environ['PUBLIC_URL'].rstrip('/')
             body={'slug':c['slug'],'title':c['title'],'excerpt':c['excerpt'],'content':c['markdown'],'category':c['category'],'tags':[],'imageUrl':base+'/editorial/public/media/'+item['media']['blog_media'],'imageAlt':c.get('alt',c['title']),'published':True,'createdAt':now(),'updatedAt':now()}
             with self.store.db() as db:
+                # Recheck the parent consent in the same transaction as publication.
+                from companion import check_publication
+                current=self.store.item(id,db)
+                if current['status']!='publishing' or current['approval_hash']!=item['approval_hash']:return
+                check_publication(self.store,db,current)
                 # Only approved content is projected; no research notes or internal state.
                 db.execute('INSERT INTO published VALUES(?,?,?)',(body['slug'],id,dumps(body)))
                 db.execute("UPDATE items SET status='published' WHERE id=?",(id,))

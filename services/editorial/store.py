@@ -43,6 +43,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, created TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, body TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]', target TEXT, target_revision INTEGER, status TEXT NOT NULL, proposals TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL, error TEXT, UNIQUE(conversation_id,id));
             CREATE TABLE IF NOT EXISTS chat_photos (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, name TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS companion_articles (parent_id TEXT PRIMARY KEY, article_id TEXT UNIQUE NOT NULL, parent_revision INTEGER NOT NULL, parent_hash TEXT NOT NULL, actor TEXT NOT NULL, created TEXT NOT NULL, article_revision INTEGER NOT NULL, state TEXT NOT NULL, auto_hash TEXT, source_snapshot TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS demand_items (item_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, proposal_index INTEGER NOT NULL, brief TEXT NOT NULL, product TEXT, UNIQUE(message_id,proposal_index));
             ''')
             db.execute("INSERT OR IGNORE INTO settings VALUES ('paused','false')")
@@ -101,6 +102,11 @@ class Store:
         row=db.execute('SELECT * FROM items WHERE id=?',(id,)).fetchone()
         if not row: raise Conflict('Contenu introuvable.')
         r=dict(row);r['content']=json.loads(r['content']);r['media']=json.loads(r['media'])
+        linked=db.execute('SELECT a.article_id,a.state,i.status,i.error,d.conversation_id FROM companion_articles a JOIN items i ON i.id=a.article_id JOIN demand_items d ON d.item_id=i.id WHERE a.parent_id=?',(id,)).fetchone()
+        r['companion_article']=dict(linked) if linked else None
+        grant=db.execute('SELECT parent_id,state,auto_hash FROM companion_articles WHERE article_id=?',(id,)).fetchone()
+        r['derived_from_post']=dict(grant) if grant else None
+        if r['derived_from_post']:r['derived_from_post'].pop('auto_hash',None)
         return r
     def content_hash(self, item):
         return digest({k:item[k] for k in ('id','revision','kind','content','media','scheduled_at')})
@@ -125,7 +131,8 @@ class Store:
             if changed_visual:
                 db.execute("DELETE FROM jobs WHERE kind='render' AND target=?",(id,));self.job(db,'render',id)
             self.event(db,'Contenu modifié ; validation précédente annulée.',actor)
-    def approve_item(self,id,revision,actor,media_reviewed):
+    def approve_item(self,id,revision,actor,media_reviewed,create_blog=False):
+        if type(create_blog) is not bool:raise Conflict('Option article invalide.')
         if media_reviewed is not True:raise Conflict('Vérifiez le visuel, la fidélité du produit et les droits des photos avant validation.')
         with self.db() as db:
             item=self.item(id,db);self.check_revision(item,revision)
@@ -133,6 +140,11 @@ class Store:
             if datetime.fromisoformat(item['scheduled_at']) <= datetime.now(timezone.utc)+timedelta(minutes=5):raise Conflict('Choisissez une date au moins cinq minutes dans le futur.')
             approval=self.content_hash(item)
             db.execute("UPDATE items SET status='approved',approval_hash=?,approved_by=?,approved_at=?,error=NULL WHERE id=?",(approval,actor,now(),id))
+            # A direct owner approval supersedes any previous automatic article seal.
+            db.execute('UPDATE companion_articles SET auto_hash=NULL WHERE article_id=?',(id,))
+            if item['kind']=='social' or create_blog:
+                from companion import authorize
+                authorize(self,db,self.item(id,db),actor,create_blog)
             self.snapshot(db,self.item(id,db));self.event(db,'Version approuvée pour publication à la date affichée.',actor)
     def recover(self):
         with self.db() as db:

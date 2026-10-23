@@ -183,8 +183,8 @@ only that draft is changed. A correction preserves its product and date. New
 product/date requests should be submitted as a new brief or changed by the owner.
 The existing Friday weekly scheduler remains the single schedule authority:
 prepare_week returns the existing next week if present, avoiding duplicate
-weekly content. Weekly plan approval and each final-content approval remain
-human actions. Grok's voice interface is used for spoken briefs; no Grok login or
+weekly content. Weekly plan approval and final-content approval remain
+human actions, with the explicit companion-article exception below. Grok's voice interface is used for spoken briefs; no Grok login or
 subscription token is copied onto Coolify.
 
 Validation includes the MCP initialize/list/call HTTP exchange, bearer rejection,
@@ -192,3 +192,31 @@ revocation, forbidden approval access, durable replay, spacing, isolated revisio
 and blog creation through the existing review path (`test_agent.py`). A successful
 server test is not a completed connection to the user's Grok Bot account: the
 owner must add the secret header in Grok Bot and call get_editorial_context.
+
+
+### Optional article authorized with a social post
+
+The owner review card exposes **Créer aussi un article de blog**, unchecked by
+default. Submitting owner approval with `create_blog: true` atomically approves
+the social revision and records a one-to-one article grant. Only this owner API
+(session and CSRF protected) can grant it; MCP has no approval tool or flag.
+A dedicated durable job drafts and illustrates the article using the approved
+social text, sources, frozen product and owner photo references. It then seals
+the generated article for publication without a second owner review. The article
+is visible at the social post's scheduled time, or as soon as ready if later.
+Ordinary standalone and weekly blog articles keep their separate review.
+
+The parent revision/hash and child revision are checked before generation,
+before sealing and in the final public-projection transaction. A changed or
+unapproved parent prevents automatic publication. Reapproving with the option
+unchecked revokes an unpublished companion; opting in again reuses the same
+article rather than duplicating it. Already published articles remain intact.
+Uncertainty, missing references, media integrity or catalogue checks still block
+publication. Resume handles both a finished draft and an interrupted render.
+
+Articles and assets are stored in the studio's persistent SQLite/media volume.
+The storefront reads `/editorial/public/articles` and renders published entries
+on its own blog pages (feed cache approximately 60 seconds). There is no write
+into Medusa. The weekly schedule and social calendar spacing are unchanged.
+Tests in `test_companion.py` exercise delegation, revocation, recovery and public
+projection using local fakes, with no live article or social publication.
