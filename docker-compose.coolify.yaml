@@ -229,7 +229,49 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+  editorial:
+    build:
+      context: ./services/editorial
+    environment:
+      PUBLIC_URL: ${POSTIZ_URL:?}
+      POSTIZ_INTERNAL_URL: http://postiz:5000
+      POSTIZ_API_KEY: ${EDITORIAL_POSTIZ_API_KEY:?}
+      POSTIZ_ORG_ID: ${EDITORIAL_ORG_ID:?}
+      POSTIZ_CHANNELS: ${EDITORIAL_CHANNELS:?}
+      EDITORIAL_OWNER_EMAIL: ${EDITORIAL_OWNER_EMAIL:?}
+      CODEX_BRIDGE_URL: http://codex-bridge:8787/v1
+      CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
+      CATALOGUE_URL: https://planetelaser.fr/api/products
+    volumes:
+    - editorial-data:/data
+    read_only: true
+    tmpfs:
+    - /tmp:size=256m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    restart: unless-stopped
+    mem_limit: 1g
+    pids_limit: 128
+    expose:
+    - '8788'
+    labels:
+      traefik.enable: 'true'
+      traefik.http.routers.planete-editorial.rule: Host(`postiz.91.99.139.252.sslip.io`) && PathPrefix(`/editorial`)
+      traefik.http.routers.planete-editorial.entrypoints: https
+      traefik.http.routers.planete-editorial.priority: '1000'
+      traefik.http.routers.planete-editorial.tls: 'true'
+      traefik.http.routers.planete-editorial.tls.certresolver: letsencrypt
+      traefik.http.routers.planete-editorial.service: planete-editorial
+      traefik.http.services.planete-editorial.loadbalancer.server.port: '8788'
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8788/health',timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 volumes:
+  editorial-data: {}
   postgres-volume:
     external: false
   postiz-redis-data:

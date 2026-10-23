@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#030303" />
+    <title>Studio éditorial · Planète Laser</title>
+    <link rel="stylesheet" href="/editorial/static/style.css" />
+    <script src="/editorial/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Aller au contenu</a>
+    <header class="topbar">
+      <a class="brand" href="/editorial" aria-label="Studio Planète Laser"
+        ><img
+          src="/editorial/static/assets/logo-rect.png"
+          alt="Planète Laser depuis 1989"
+        /><span>Studio éditorial</span></a
+      >
+      <nav aria-label="Navigation">
+        <a href="/" class="quiet-link">Ouvrir Postiz ↗</a
+        ><button id="pause" class="button secondary" disabled>Suspendre</button>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">LE MATÉRIEL PREND VIE</p>
+          <h1>
+            Votre prochaine semaine,<br /><span
+              >prête à prendre la parole.</span
+            >
+          </h1>
+          <p class="intro">
+            7 sujets pour Facebook et Instagram, 1 article pour le blog.<br />Vous
+            gardez la main sur chaque publication.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button class="button primary" id="request-open">
+            ＋ Mettre un article en avant</button
+          ><button class="button secondary" id="prepare" disabled>
+            Préparer la prochaine semaine
+          </button>
+          <p class="micro">
+            Préparation automatique le vendredi à 9 h · heure de Paris
+          </p>
+        </div>
+      </section>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="error" class="notice error" role="alert" hidden></div>
+      <section id="login" class="empty" hidden>
+        <h2>Connectez-vous à votre compte Postiz</h2>
+        <p>
+          Le studio utilise votre session Postiz pour protéger vos contenus et
+          vos validations.
+        </p>
+        <a class="button primary" href="/auth/login">Se connecter</a>
+      </section>
+      <section id="workspace" aria-busy="true">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LE CALENDRIER</p>
+            <h2>Le programme de la semaine</h2>
+          </div>
+          <label class="week-picker"
+            >Semaine<select id="weeks" aria-label="Choisir une semaine"></select
+          ></label>
+        </div>
+        <div id="stats" class="stats"></div>
+        <div id="week-content">
+          <div class="empty">
+            <span class="loading-dot"></span>
+            <p>Chargement de votre studio…</p>
+          </div>
+        </div>
+        <section class="requests-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">VOS PRIORITÉS</p>
+              <h2>À mettre en avant</h2>
+            </div>
+            <button id="request-open-bottom" class="button secondary">
+              Ajouter une demande
+            </button>
+          </div>
+          <p class="muted">
+            Un nom, un EAN ou un lien suffit pour lancer la recherche. Les
+            demandes sont intégrées aux prochains plans.
+          </p>
+          <div id="requests"></div>
+        </section>
+        <details class="activity">
+          <summary>Journal du studio</summary>
+          <div id="events"></div>
+        </details>
+      </section>
+      <footer>
+        Planète Laser · Charte « Le matériel prend vie »<span
+          >Une validation du plan autorise la création. Chaque contenu doit
+          ensuite être approuvé avant publication.</span
+        >
+      </footer>
+    </main>
+    <dialog id="request-dialog" aria-labelledby="request-title">
+      <form id="request-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">UNE ENVIE, UNE RÉFÉRENCE</p>
+            <h2 id="request-title">À mettre en avant</h2>
+          </div>
+          <button
+            class="icon-button close-dialog"
+            type="button"
+            aria-label="Fermer"
+          >
+            ×
+          </button>
+        </div>
+        <label
+          >Produit, nom + EAN ou lien<input
+            name="query"
+            required
+            maxlength="500"
+            placeholder="Ex. Yamaha P-145, un code EAN ou une fiche produit" /></label
+        ><label
+          >Votre consigne <span class="optional">facultatif</span
+          ><textarea
+            name="note"
+            rows="3"
+            maxlength="3000"
+            placeholder="Pour les débutants, à essayer au magasin, une idée de cadeau…"
+          ></textarea>
+        </label>
+        <div class="form-grid">
+          <label
+            >Affichage du prix<select name="price_mode" id="price-mode">
+              <option value="hide">Sans prix</option>
+              <option value="catalogue">Prix actuel du catalogue</option>
+              <option value="custom">Prix confirmé par moi</option>
+            </select></label
+          ><label
+            >Priorité<select name="priority">
+              <option value="normal">Normale</option>
+              <option value="high">Prioritaire</option>
+            </select></label
+          >
+        </div>
+        <label id="custom-price" hidden
+          >Prix TTC en euros<input
+            name="price"
+            type="number"
+            min="0.01"
+            max="99999.99"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="129,00"
+          /><span class="hint"
+            >Ce montant sera proposé pour votre validation avec le
+            contenu.</span
+          ></label
+        >
+        <p class="hint">
+          Une correspondance incertaine est signalée. Aucun prix trouvé chez un
+          concurrent n’est utilisé comme prix du magasin.
+        </p>
+        <div class="dialog-error notice error" role="alert" hidden></div>
+        <div class="dialog-footer">
+          <button type="button" class="button secondary close-dialog">
+            Annuler</button
+          ><button type="submit" class="button primary">
+            Ajouter à mes priorités
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      id="item-dialog"
+      class="review-dialog"
+      aria-labelledby="review-title"
+    >
+      <div id="review-content"></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

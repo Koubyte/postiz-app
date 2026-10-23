@@ -1,0 +1,248 @@
+"""Approval, publication isolation and durable idempotency regression tests.
+
+All network and model calls are fakes. No Postiz/social publication is made.
+"""
+import hashlib
+import importlib.util
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import requests
+
+sys.path.insert(0, str(Path(__file__).parent))
+from generation import Generator, GenerationError, validate_content, validate_plan
+from publisher import Publisher
+import publisher as publication
+from store import Store, Conflict, dumps, planned_date, monday_next, PARIS
+
+
+@pytest.fixture
+def store(tmp_path):
+    return Store(tmp_path)
+
+
+def content(kind='social'):
+    value={'title':'Choisir un micro','headline':'Une voix bien enregistrée','alt':'Microphone dans un studio','sources':[{'title':'Notice fabricant','url':'https://example.com/manual'}],'uncertainty':''}
+    if kind=='social':
+        value.update(facebook='Un conseil concret pour votre microphone.',instagram='Un conseil concret pour votre microphone.')
+    else:
+        value.update(markdown='## Un conseil\n\n'+'Conseils pratiques utiles et précis. '*110,excerpt='Des conseils pour votre microphone.',slug='choisir-microphone-test',category='guides')
+    return value
+
+
+def create_item(store,kind='social',status='review'):
+    identifier='test-'+kind
+    week=store.prepare('2030-10-28')
+    media_dir=store.root/'media';media_dir.mkdir(exist_ok=True)
+    files={'media':'social.png','blog_media':'cover.png','source_media':'source.png'}
+    for filename in files.values():(media_dir/filename).write_bytes(b'fixed image '+filename.encode())
+    media={**files,'hashes':{key:hashlib.sha256((media_dir/name).read_bytes()).hexdigest() for key,name in files.items()}}
+    due=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()
+    with store.db() as db:
+        db.execute('INSERT INTO items(id,week_id,kind,slot,status,content,media,scheduled_at) VALUES(?,?,?,?,?,?,?,?)',(identifier,week,kind,0,status,dumps(content(kind)),dumps(media),due))
+    return identifier
+
+
+def make_due(monkeypatch,item):
+    fake_now=datetime.fromisoformat(item['scheduled_at'])+timedelta(seconds=1)
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            return fake_now.astimezone(tz) if tz else fake_now.replace(tzinfo=None)
+    monkeypatch.setattr(publication,'datetime',Clock)
+
+
+def fake_api(monkeypatch,publisher,fail=False):
+    monkeypatch.setenv('POSTIZ_CHANNELS',json.dumps({'facebook':'fb','instagram':'ig'}))
+    calls=[]
+    def api(method,path,**kwargs):
+        calls.append((method,path,kwargs))
+        if path=='/integrations':return [{'id':'fb','identifier':'facebook'},{'id':'ig','identifier':'instagram'}]
+        if path=='/upload':return {'id':'upload','path':'https://example.com/upload.png'}
+        if path=='/posts':
+            if fail:raise requests.Timeout('Unknown whether server accepted POST')
+            return [{'id':'post-'+str(len(calls))}]
+        raise AssertionError(path)
+    monkeypatch.setattr(publisher,'api',api)
+    return calls
+
+
+def test_approval_requires_review_and_exact_revision(store):
+    id=create_item(store)
+    with pytest.raises(Conflict):store.approve_item(id,1,'owner',False)
+    with pytest.raises(Conflict):store.approve_item(id,2,'owner',True)
+    store.approve_item(id,1,'owner',True)
+    item=store.item(id)
+    assert item['approval_hash']==store.content_hash(item)
+    assert item['approved_by']=='owner'
+    assert item['status']=='approved'
+    with pytest.raises(Conflict):store.approve_item(id,1,'owner',True)
+
+
+def test_content_or_date_change_revokes_previous_approval(store):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    previous=store.item(id)
+    store.save_item(id,1,{'facebook':'Texte corrigé.'},previous['scheduled_at'],'owner')
+    changed=store.item(id)
+    assert changed['revision']==2 and changed['status']=='review'
+    assert changed['approval_hash'] is None and changed['approved_at'] is None
+    with pytest.raises(Conflict):store.approve_item(id,1,'owner',True)
+    store.approve_item(id,2,'owner',True)
+    store.save_item(id,2,{},(datetime.now(timezone.utc)+timedelta(hours=2)).isoformat(),'owner')
+    assert store.item(id)['approval_hash'] is None
+
+
+def test_visual_change_requires_new_render_and_approval(store):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    store.save_item(id,1,{'headline':'Une nouvelle accroche'},store.item(id)['scheduled_at'],'owner')
+    item=store.item(id)
+    assert item['status']=='queued' and not item['media'] and not item['approval_hash']
+    with pytest.raises(Conflict):store.approve_item(id,2,'owner',True)
+    with store.db() as db:assert db.execute("SELECT count(*) FROM jobs WHERE kind='render' AND target=?",(id,)).fetchone()[0]==1
+
+
+def test_no_delivery_without_approval_and_no_changed_media(store,monkeypatch):
+    id=create_item(store);publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    calls=fake_api(monkeypatch,publisher);make_due(monkeypatch,store.item(id))
+    publisher.deliver(id)
+    assert calls==[]
+    store.approve_item(id,1,'owner',True)
+    (store.root/'media'/'social.png').write_bytes(b'new unapproved bytes')
+    with pytest.raises(Conflict,match='média'):publisher.deliver(id)
+    assert calls==[]
+
+
+def test_ambiguous_post_is_durable_and_never_retried(store,monkeypatch):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]));calls=fake_api(monkeypatch,publisher,fail=True)
+    make_due(monkeypatch,store.item(id))
+    with pytest.raises(Conflict,match='incertain'):publisher.deliver(id)
+    store.recover()
+    publisher.deliver(id)
+    assert len([call for call in calls if call[1]=='/posts'])==1
+    with store.db() as db:
+        rows=list(db.execute('SELECT channel,status FROM deliveries'))
+    assert [(r[0],r[1]) for r in rows]==[('facebook','uncertain')]
+    assert store.item(id)['status']=='blocked'
+    with pytest.raises(Conflict):store.save_item(id,1,{'facebook':'Relancer'},store.item(id)['scheduled_at'],'owner')
+
+
+def test_two_channels_once_and_pause_blocks_all_transmission(store,monkeypatch):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]));calls=fake_api(monkeypatch,publisher)
+    make_due(monkeypatch,store.item(id))
+    with store.db() as db:db.execute("UPDATE settings SET value='true' WHERE key='paused'")
+    publisher.deliver(id);assert calls==[]
+    with store.db() as db:db.execute("UPDATE settings SET value='false' WHERE key='paused'")
+    publisher.deliver(id);publisher.deliver(id)
+    assert len([call for call in calls if call[1]=='/posts'])==2
+    assert store.item(id)['status']=='scheduled'
+
+
+def test_blog_public_projection_only_after_approved_due_publication(store,monkeypatch):
+    id=create_item(store,'blog');publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    monkeypatch.setenv('PUBLIC_URL','https://postiz.example.com')
+    assert store.public_articles()==[]
+    store.approve_item(id,1,'owner',True)
+    assert store.public_articles()==[]
+    make_due(monkeypatch,store.item(id));publisher.deliver(id)
+    articles=store.public_articles()
+    assert len(articles)==1 and articles[0]['published'] is True
+    assert 'approval_hash' not in articles[0] and 'media' not in articles[0] and 'sources' not in articles[0]
+    publisher.deliver(id)
+    assert len(store.public_articles())==1
+
+
+def test_public_http_endpoints_do_not_expose_drafts(store,monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv('EDITORIAL_DATA',str(store.root))
+    monkeypatch.setenv('EDITORIAL_WORKER','false')
+    spec=importlib.util.spec_from_file_location('editorial_review_app',Path(__file__).with_name('app.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    create_item(store,'blog')
+    with TestClient(module.app) as client:
+        assert client.get('/editorial/public/articles').json()=={'articles':[]}
+        assert client.get('/editorial/public/media/cover.png').status_code==404
+        assert client.get('/editorial/media/cover.png').status_code==401
+        assert client.get('/editorial/api/state').status_code==401
+
+
+def valid_plan():
+    products=[{'id':'p'+str(i)} for i in range(3)]
+    plan={'subjects':[{'slot':i,'kind':'product' if i<3 else 'advice','title':'Sujet '+str(i),'angle':'Conseil pratique','product_id':'p'+str(i) if i<3 else None,'scene':'Un studio'} for i in range(7)],'article':{'title':'Un guide','angle':'Un plan utile','product_id':None,'social_slot':6}}
+    return plan,products
+
+
+def test_seven_subjects_three_distinct_products_and_paris_timezone():
+    plan,products=valid_plan()
+    validated=validate_plan(plan,products,'2026-10-19')
+    dates=[datetime.fromisoformat(s['scheduled_at']).astimezone(PARIS) for s in validated['subjects']]
+    assert len({d.date() for d in dates})==7
+    assert all(d.hour==12 for d in dates)
+    assert datetime.fromisoformat(validated['subjects'][5]['scheduled_at']).hour==10
+    assert datetime.fromisoformat(validated['subjects'][6]['scheduled_at']).hour==11
+    assert monday_next(datetime(2026,10,23,9,tzinfo=timezone.utc))=='2026-10-26'
+    plan['subjects'][2]['product_id']='p1'
+    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
+
+
+def test_duplicate_days_outside_week_or_invalid_linked_slot_are_blocked():
+    plan,products=valid_plan()
+    for subject in plan['subjects']:subject['scheduled_at']='2026-10-19T12:00:00+02:00'
+    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
+    plan,products=valid_plan();plan['subjects'][0]['scheduled_at']='2026-12-19T12:00:00+01:00'
+    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
+    plan,products=valid_plan();plan['article']['social_slot']=19
+    with pytest.raises(GenerationError):validate_plan(plan,products,'2026-10-19')
+
+
+@pytest.mark.parametrize('field',['facebook','instagram','headline','title','alt'])
+def test_price_hidden_cannot_be_undermined_by_model_text(field):
+    candidate=content();candidate[field]='Un microphone à 99 € pour votre studio.'
+    with pytest.raises(GenerationError):validate_content(candidate,'social')
+
+
+def test_draft_hidden_price_is_not_injected(store,monkeypatch):
+    id=create_item(store,status='queued');item=store.item(id)
+    plan={'subjects':[{'title':'Sujet','angle':'Conseil','product_id':'p1','scene':'Studio'}],'products':[{'id':'p1','title':'Micro','price':199,'price_mode':'hide'}]}
+    with store.db() as db:db.execute('UPDATE weeks SET plan=? WHERE id=?',(dumps(plan),item['week_id']))
+    generator=Generator(store)
+    monkeypatch.setattr(generator,'ask',lambda prompt:content())
+    monkeypatch.setattr(generator,'render',lambda id:None)
+    generator.draft(id)
+    drafted=store.item(id)['content']
+    assert drafted['price_text'] is None
+    assert '€' not in drafted['facebook']+drafted['instagram']
+
+
+@pytest.mark.parametrize('changed', [{'price':201,'available':True},{'price':199,'available':False}])
+def test_changed_catalogue_price_or_stock_blocks_approved_delivery(store,monkeypatch,changed):
+    id=create_item(store)
+    with store.db() as db:
+        item=store.item(id,db);media=item['media']
+        media['product_snapshot']={'id':'p1','price':199,'available':True,'price_mode':'catalogue','external':False}
+        db.execute('UPDATE items SET media=? WHERE id=?',(dumps(media),id))
+    store.approve_item(id,1,'owner',True)
+    generator=SimpleNamespace(products=lambda **kw:[{'id':'p1',**changed}])
+    publisher=Publisher(store,generator);calls=fake_api(monkeypatch,publisher)
+    make_due(monkeypatch,store.item(id))
+    with pytest.raises(Conflict):publisher.deliver(id)
+    assert calls==[]
+
+
+def test_research_can_never_set_publication_status(store,monkeypatch):
+    id=create_item(store,status='queued');item=store.item(id)
+    with store.db() as db:
+        db.execute('UPDATE weeks SET plan=? WHERE id=?',(dumps({'subjects':[{'title':'Conseil','product_id':None}],'products':[]}),item['week_id']))
+    answer={**content(),'status':'approved','approval_hash':'forged','approved_by':'model'}
+    generator=Generator(store)
+    monkeypatch.setattr(generator,'ask',lambda prompt:answer)
+    monkeypatch.setattr(generator,'render',lambda id:None)
+    generator.draft(id)
+    item=store.item(id)
+    assert item['status']=='rendering' and not item['approval_hash']
+    assert 'approval_hash' not in item['content'] and 'status' not in item['content']
