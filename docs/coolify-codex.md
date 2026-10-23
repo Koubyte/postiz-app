@@ -66,6 +66,15 @@ not inherit OpenAI API keys from the app.
   Copilot editor and the Mastra assistant. Function calls are validated and
   returned to Postiz, whose existing authorization and confirmation flows
   execute them. Codex cannot execute those actions directly.
+- Research: text requests can use native, read-only live web search without a
+  separate search API key. The provider instructs Codex to research a supplied
+  product name/EAN, open manufacturer sources, check the exact model/variant,
+  retain source URLs and disclose uncertain identifiers. Sources accompany
+  ordinary text, schema-compatible structured output, or assistant content
+  alongside function calls. They are not automatically added to publication
+  copy. These are generation instructions, not proof that every claim has been
+  verified; review the evidence before approving a publication. Search may be
+  unavailable under the account/model policy and must be smoke-tested live.
 - Images: new images from a prompt, returned as PNG/base64 and stored through
   Postiz's normal media handling. Native Codex controls its image model and
   dimensions; requested dimensions are aspect-ratio guidance, not an exact
@@ -78,9 +87,22 @@ not inherit OpenAI API keys from the app.
 - Two text generations and one image generation can run concurrently, with
   bounded queues. Busy, timeout, authentication and invalid-output failures
   return errors without exposing prompts, logs or credentials.
-- The runtime disables shell, subagents, apps, plugins and web search. Only the
-  image route enables the native image tool. Containers have no Docker socket
-  or host mounts; the bridge is non-root with a read-only root filesystem.
+- The runtime disables shell, subagents, apps and plugins. The text route
+  enables native web search; the image route keeps search disabled and enables
+  only the native image tool. Containers have no Docker socket or host mounts;
+  the bridge is non-root with a read-only root filesystem. Web sources are
+  treated as untrusted evidence; credentials and arbitrary application
+  environment variables are not inherited by the Codex subprocess.
+
+`CODEX_WEB_SEARCH` on the bridge defaults to `live`. Set `cached` to use indexed
+content without live retrieval, or `disabled` to remove research. Other values
+are rejected. This is a server setting; chat request fields cannot override it.
+When adding it to Coolify, also expose it in the bridge Compose environment.
+Research shares the text concurrency/queue limits, 180-second generation timeout
+and 4 MiB subprocess-output limit. Its prompt targets no more than six
+search/open actions and three sources; that action target is not a hard quota.
+Simple rewrites do not need a search. Web prices/stock are not treated as the
+store's selling price or local availability.
 
 Set `CODEX_MODEL` on the bridge if an explicit model is needed and available to
 the signed-in account. Otherwise Codex selects its supported default. Model
@@ -95,8 +117,9 @@ npm test
 ```
 
 These tests exercise the real OpenAI client against a mocked Codex runtime:
-text, schemas, tool streaming, errors, auth, cancellation, concurrency and PNG
-responses. They do not establish live OAuth or model availability. The Postiz
+text, schemas, sourced research transport, tool streaming, errors, auth,
+cancellation, concurrency, subprocess credential isolation and PNG responses.
+They do not establish live OAuth, search, source accuracy or model availability. The Postiz
 Docker build separately checks the backend, orchestrator and frontend.
 
 After deployment and device login, run this inside the **Postiz** container
@@ -115,4 +138,5 @@ The bridge still selects the actual Codex model independently.
 References: [Codex authentication](https://learn.chatgpt.com/docs/auth),
 [noninteractive mode](https://learn.chatgpt.com/docs/non-interactive-mode),
 [app-server](https://learn.chatgpt.com/docs/app-server),
-[image generation](https://learn.chatgpt.com/docs/image-generation).
+[image generation](https://learn.chatgpt.com/docs/image-generation),
+[web search configuration](https://learn.chatgpt.com/docs/config-file/config-reference#web_search).

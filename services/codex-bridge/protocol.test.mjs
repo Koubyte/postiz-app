@@ -4,7 +4,10 @@ import { once } from 'node:events';
 import OpenAI from 'openai';
 import { prepare } from './protocol.mjs';
 import { createBridge } from './server.mjs';
-import { codexArgs } from './runner.mjs';
+import { codexArgs, runCodex, webSearchMode } from './runner.mjs';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { prepareImage, imageResponse } from './images.mjs';
 
 const messages = [{ role: 'user', content: 'Write a short French post.' }];
@@ -100,13 +103,70 @@ test('disconnect cancels the underlying work', async t => {
   await Promise.race([wasCancelled, new Promise((_, reject) => setTimeout(() => reject(new Error('not cancelled')), 2000).unref())]);
 });
 
-test('Codex native text tools and API authentication are disabled', () => {
+test('only native web research is enabled for text; local tools and API authentication remain disabled', () => {
   const args = codexArgs('/tmp/test', undefined);
   assert.ok(args.includes('forced_login_method="chatgpt"'));
   assert.ok(args.includes('features.shell_tool=false'));
   assert.ok(args.includes('features.image_generation=false'));
+  assert.ok(args.includes('features.apps=false'));
+  assert.ok(args.includes('features.plugins=false'));
+  assert.ok(args.includes('features.multi_agent=false'));
+  assert.ok(args.includes('approval_policy="never"'));
+  assert.ok(args.includes('web_search="live"'));
   assert.ok(args.includes('--ignore-user-config'));
   assert.ok(!args.includes('--dangerously-bypass-approvals-and-sandbox'));
+});
+
+test('web research is server-controlled and invalid configuration fails closed', () => {
+  assert.equal(webSearchMode({}), 'live');
+  assert.ok(codexArgs('/tmp/test', undefined, 'disabled').includes('web_search="disabled"'));
+  assert.throws(() => webSearchMode({ CODEX_WEB_SEARCH: 'live;secret-value' }), e => e.code === 'invalid_configuration' && !e.message.includes('secret-value'));
+  const plan = prepare({ messages, web_search: 'disabled' });
+  assert.match(plan.prompt, /native read-only web search/);
+  assert.doesNotMatch(prepare({ messages }, { webSearch: 'disabled' }).prompt, /You may use ONLY/);
+});
+
+test('sourced research and uncertainty survive structured responses without changing the schema', async t => {
+  const research = { product: 'Example Model', eanVerified: false, evidence: 'The model matches; this source does not confirm the supplied EAN.', sources: [{ url: 'https://example.com/product', title: 'Manufacturer specifications' }] };
+  const schema = { type: 'object', additionalProperties: false, required: ['product', 'eanVerified', 'evidence', 'sources'], properties: { product: { type: 'string' }, eanVerified: { type: 'boolean' }, evidence: { type: 'string' }, sources: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['url', 'title'], properties: { url: { type: 'string' }, title: { type: 'string' } } } } } };
+  const { client } = await fixture(t, { runner: async () => ({ output: output(JSON.stringify(research)) }) });
+  const result = await client.chat.completions.parse({ model: 'codex', messages, response_format: { type: 'json_schema', json_schema: { name: 'research', strict: true, schema } } });
+  assert.deepEqual(result.choices[0].message.parsed, research);
+});
+
+test('sources stay in assistant content alongside function calls and out of publication arguments', async t => {
+  const evidence = 'Model confirmed: [Manufacturer](https://example.com/product). EAN not confirmed.';
+  const { client } = await fixture(t, { runner: async () => ({ output: output(evidence, [{ name: 'listPosts', arguments: '{"limit":2}' }]) }) });
+  const stream = await client.chat.completions.create({ model: 'codex', messages, tools: [tool], stream: true });
+  const chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const delta = chunks.find(c => c.choices[0]?.delta.tool_calls).choices[0].delta;
+  assert.equal(delta.content, evidence);
+  assert.equal(delta.tool_calls[0].function.arguments, '{"limit":2}');
+});
+
+test('text subprocess enables hosted search without inheriting credentials or arbitrary environment', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'postiz-runner-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const executable = join(directory, 'fake-codex');
+  await writeFile(executable, `#!${process.execPath}
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+const resultPath = args[args.indexOf('--output-last-message') + 1];
+const result = { args, apiKeyInherited: !!process.env.OPENAI_API_KEY, bridgeTokenInherited: !!process.env.CODEX_BRIDGE_TOKEN, customInherited: !!process.env.PRIVATE_CUSTOM };
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({type:'item.completed',item:{type:'web_search',id:'search_1'}}));
+  console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:10,output_tokens:5}}));
+  fs.writeFileSync(resultPath, JSON.stringify(result));
+});
+`, { mode: 0o700 });
+  const result = await runCodex({ prompt: 'Research this product', schema: { type: 'object' } }, { CODEX_BIN: executable, CODEX_HOME: directory, CODEX_WEB_SEARCH: 'live', OPENAI_API_KEY: 'must-not-pass', CODEX_BRIDGE_TOKEN: 'must-not-pass', PRIVATE_CUSTOM: 'must-not-pass' });
+  const actual = JSON.parse(result.output);
+  assert.ok(actual.args.includes('web_search="live"'));
+  assert.equal(actual.apiKeyInherited, false);
+  assert.equal(actual.bridgeTokenInherited, false);
+  assert.equal(actual.customInherited, false);
+  assert.deepEqual(result.usage, { input_tokens: 10, output_tokens: 5 });
 });
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';

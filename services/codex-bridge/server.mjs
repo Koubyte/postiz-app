@@ -2,11 +2,11 @@ import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { BridgeError, prepare, streamChunks } from './protocol.mjs';
-import { runCodex } from './runner.mjs';
+import { runCodex, webSearchMode } from './runner.mjs';
 import { prepareImage, runImage } from './images.mjs';
 import { createLimiter } from './limiter.mjs';
 
-export function createBridge({ token, runner = runCodex, imageRunner = runImage, maxActive = 2, maxQueued = 8 } = {}) {
+export function createBridge({ token, runner = runCodex, imageRunner = runImage, maxActive = 2, maxQueued = 8, webSearch = webSearchMode() } = {}) {
   if (!token || token.length < 32) throw new Error('CODEX_BRIDGE_TOKEN must contain at least 32 characters.');
   const acquireText = createLimiter(maxActive, maxQueued);
   const acquireImage = createLimiter(1, maxQueued);
@@ -39,7 +39,7 @@ export function createBridge({ token, runner = runCodex, imageRunner = runImage,
         if (!controller.signal.aborted) json(200, result);
         return;
       }
-      const plan = prepare(body);
+      const plan = prepare(body, { webSearch });
       if (body.stream) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
         res.write(': generating\n\n');
