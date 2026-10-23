@@ -178,11 +178,18 @@ class Generator:
             for request_id in displaced:db.execute("UPDATE requests SET status='pending',week_id=NULL WHERE id=? AND week_id=?",(request_id,week['id']))
             if request:db.execute("UPDATE requests SET status='in_plan',week_id=? WHERE id=?",(week['id'],request['id']))
             self.store.event(db,'Post '+str(slot+1)+' modifié. Les six autres sujets et le blog sont conservés ; le plan reste à valider.')
+    def context(self,item):
+        with self.store.db() as db:
+            demand=db.execute('SELECT brief,product FROM demand_items WHERE item_id=?',(item['id'],)).fetchone()
+            if demand:
+                brief=json.loads(demand['brief']);product=json.loads(demand['product']) if demand['product'] else None
+                return {'subjects':[brief], 'products':[product] if product else []},brief,product
+            plan=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(item['week_id'],)).fetchone()[0])
+        brief=plan['article'] if item['kind']=='blog' else plan['subjects'][item['slot']]
+        return plan,brief,next((p for p in plan['products'] if p['id']==brief.get('product_id')),None)
     def draft(self,id):
         item=self.store.item(id)
-        with self.store.db() as db:plan=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(item['week_id'],)).fetchone()[0])
-        brief=plan['article'] if item['kind']=='blog' else plan['subjects'][item['slot']]
-        product=next((p for p in plan['products'] if p['id']==brief.get('product_id')),None)
+        plan,brief,product=self.context(item)
         if item['kind']=='blog':
             fmt='{"title":str,"headline":str,"excerpt":str,"slug":str,"category":"guides|actualites|produits","markdown":str,"alt":str,"sources":[{"title":str,"url":str}],"uncertainty":str}'
             instruction='Rédigez un article complet de 700 à 1100 mots, utile et précis. Markdown sans HTML : introduction, H2/H3, étapes pratiques, tableau si utile, erreurs fréquentes, limites, conclusion utile. Pas de H1 dans le corps. Mentionnez vos sources avec liens. Aucune image Markdown : le logiciel ajoute les illustrations validées. Ne pas inventer de conseil technique ou de compatibilité. Le slug doit être unique et sans accent.'
@@ -221,8 +228,7 @@ class Generator:
     def render(self,id):
         from media import render_assets
         item=self.store.item(id)
-        with self.store.db() as db:plan=json.loads(db.execute('SELECT plan FROM weeks WHERE id=?',(item['week_id'],)).fetchone()[0])
-        product=next((p for p in plan['products'] if p['id']==item['content'].get('product_id')),None)
+        plan,brief,product=self.context(item)
         references=[];reference_payloads=[]
         if product:
             if product.get('image_mask_required'):raise GenerationError('Cette photo fournisseur impose une restriction. Choisissez une photo autorisée avant génération.')
@@ -234,7 +240,13 @@ class Generator:
             reference_specs=product.get('reference_images') or [{'url':product['thumbnail'],'label':product['title']}]
             if not 1<=len(reference_specs)<=3:raise GenerationError('Un visuel produit accepte une à trois références photo.')
             for spec in reference_specs:
-                reference_source=public_bytes(spec['url'],8*1024*1024)
+                if spec.get('photo_id'):
+                    with self.store.db() as db:
+                        photo=db.execute('SELECT p.* FROM chat_photos p JOIN demand_items d ON d.conversation_id=p.conversation_id WHERE p.id=? AND d.item_id=?',(spec['photo_id'],id)).fetchone()
+                    if not photo:raise GenerationError('Photo de référence introuvable pour cette demande.')
+                    reference_source=(self.store.root/'media'/photo['filename']).read_bytes()
+                    if hashlib.sha256(reference_source).hexdigest()!=photo['sha256']:raise GenerationError('La photo de référence a changé.')
+                else:reference_source=public_bytes(spec['url'],8*1024*1024)
                 photo=_decode(reference_source)
                 photo.thumbnail((2048,2048),Image.Resampling.LANCZOS)
                 buffer=io.BytesIO();photo.save(buffer,format='PNG')
@@ -263,7 +275,6 @@ class Generator:
         if product and not reference_used:raise GenerationError('La génération n’a pas confirmé la réception de la photo de référence. Aucun visuel produit retenu.')
         try:background=base64.b64decode(result['data'][0]['b64_json'],validate=True)
         except (ValueError,KeyError,IndexError):raise GenerationError('Le visuel généré est invalide.')
-        brief=plan['article'] if item['kind']=='blog' else plan['subjects'][item['slot']]
         assets=render_assets(item_id=id+'-r'+str(item['revision']),product=product,background=background,content={**item['content'],'kind':brief.get('kind','advice')},output_dir=self.store.root/'media',product_references=references or None,reference_used=reference_used)
         # Seal all approval-visible assets, never accept replacement bytes after approval.
         hashes={}

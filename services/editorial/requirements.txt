@@ -2,3 +2,4 @@ fastapi==0.161.1
 uvicorn==0.54.0
 requests==2.34.2
 Pillow==13.0.0
+pillow-heif==1.8.1

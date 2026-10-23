@@ -229,6 +229,28 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+  transcription:
+    build:
+      context: ./services/transcription
+    environment:
+      TRANSCRIPTION_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
+    read_only: true
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    restart: unless-stopped
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 128
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8789/health',timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
   editorial:
     build:
       context: ./services/editorial
@@ -242,6 +264,7 @@ services:
       CODEX_BRIDGE_URL: http://codex-bridge:8787/v1
       CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
       CATALOGUE_URL: https://planetelaser.fr/api/products
+      TRANSCRIPTION_URL: http://transcription:8789
     volumes:
     - editorial-data:/data
     read_only: true

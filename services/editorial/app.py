@@ -14,29 +14,34 @@ from store import Store, Conflict, now, uid, dumps, PARIS, monday_next
 from generation import Generator, GenerationError, validate_plan, validate_content, safe_sources
 from publisher import Publisher
 from media import MediaBlocked
+from conversation import Conversation
+from spacing import calendar_times as read_calendar, reservations, available_slot
 
 ROOT=Path(__file__).parent
 store=Store(os.environ.get('EDITORIAL_DATA','/data'))
 generator=Generator(store)
 publisher=Publisher(store,generator)
+conversation=Conversation(store,generator)
 stop=threading.Event()
+
+def calendar_times(exclude_ids=()):return read_calendar(publisher,exclude_ids)
 
 def safe_error(exc):
     return str(exc)[:500] if isinstance(exc,(Conflict,GenerationError,MediaBlocked)) else 'Une étape a échoué. Aucun nouvel envoi ne sera effectué sans vérification.'
 
-def work():
+def work(chat_only=False):
     while not stop.wait(3):
         if store.paused():continue
         with store.db() as db:
-            row=db.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY updated LIMIT 1").fetchone()
+            row=db.execute("SELECT * FROM jobs WHERE status='queued' AND (kind='chat')=? ORDER BY updated LIMIT 1",(int(chat_only),)).fetchone()
             if not row:continue
             job=dict(row)
             db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?",(now(),job['id']))
             if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
             if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
-            if job['kind']=='draft':db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
+            if job['kind'] in ('draft','demand'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
-            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise}[job['kind']](job['target'])
+            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -46,7 +51,9 @@ def work():
                 # Bounded retries for generation only. Publishing is a separate path.
                 retry=job['attempts']<1
                 db.execute('UPDATE jobs SET status=?,updated=? WHERE id=?',('queued' if retry else 'failed',now(),job['id']))
-                if job['kind']=='revise':
+                if job['kind']=='chat':
+                    db.execute('UPDATE messages SET status=?,error=? WHERE id=?',('queued' if retry else 'failed',message,job['target']))
+                elif job['kind']=='revise':
                     if not retry:store.fail_revision(db,job['target'],message)
                 else:
                     table='weeks' if job['kind']=='plan' else 'items'
@@ -82,6 +89,7 @@ async def lifespan(app):
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         for target in (work,schedule):
             t=threading.Thread(target=target,daemon=True);t.start();threads.append(t)
+        t=threading.Thread(target=work,args=(True,),daemon=True);t.start();threads.append(t)
     yield
     stop.set()
 
@@ -254,6 +262,15 @@ async def item_action(id:str,request:Request):
         store.save_item(id,data.get('revision'),editable_content(data.get('content',{}),item),date(data.get('scheduled_at')),who)
     elif action=='approve':
         item=store.item(id);editable_content(item['content'],item)
+        with store.db() as db:
+            demand=db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(id,)).fetchone()
+        if demand:
+            occupied=await asyncio.to_thread(calendar_times)
+            with store.db() as db:
+                proposed=available_slot(item['scheduled_at'],occupied+reservations(db,id))
+                if proposed!=item['scheduled_at']:
+                    label=datetime.fromisoformat(proposed).astimezone(PARIS).strftime('%d/%m à %H:%M')
+                    raise Conflict('Ce créneau est trop proche d’un autre sujet. Enregistrez un nouvel horaire, par exemple le '+label+' (Paris), puis validez.')
         store.approve_item(id,data.get('revision'),who,data.get('media_reviewed'))
     else:
         with store.db() as db:
@@ -268,7 +285,7 @@ async def item_action(id:str,request:Request):
                 # Explicit retry may replace text and media; always revoke approval.
                 store.snapshot(db,item)
                 db.execute("UPDATE items SET status='queued',revision=revision+1,approval_hash=NULL,approved_by=NULL,approved_at=NULL,error=NULL,media='{}' WHERE id=?",(id,))
-                db.execute("DELETE FROM jobs WHERE target=?",(id,));store.job(db,'draft',id);store.event(db,'Nouvelle proposition demandée ; validation annulée.',who)
+                db.execute("DELETE FROM jobs WHERE target=?",(id,));store.job(db,'demand' if db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(id,)).fetchone() else 'draft',id);store.event(db,'Nouvelle proposition demandée ; validation annulée.',who)
     return {'ok':True}
 
 @app.get('/editorial/media/{name}')
@@ -288,3 +305,95 @@ def public_media(name:str):
     path=store.root/'media'/name
     if not path.is_file():raise HTTPException(404)
     return FileResponse(path)
+
+async def binary_body(request,limit):
+    if request.headers.get('origin')!=os.environ['PUBLIC_URL'].rstrip('/') or request.headers.get('x-editorial-action')!='1':raise HTTPException(403,'Origine de la demande refusée.')
+    chunks=[];size=0
+    async for chunk in request.stream():
+        size+=len(chunk)
+        if size>limit:raise HTTPException(413,'Fichier trop volumineux.')
+        chunks.append(chunk)
+    if not size:raise HTTPException(400,'Fichier vide.')
+    return b''.join(chunks)
+
+@app.get('/editorial/api/conversations')
+async def conversations(request:Request):
+    await actor(request)
+    with store.db() as db:
+        rows=[dict(r) for r in db.execute('SELECT * FROM conversations ORDER BY created DESC LIMIT 100')]
+    return {'conversations':rows,'voice':bool(os.environ.get('TRANSCRIPTION_URL')),'spacing_minutes':120}
+
+@app.post('/editorial/api/conversations')
+async def new_conversation(request:Request):
+    await actor(request);await body(request)
+    return {'id':conversation.create()}
+
+@app.get('/editorial/api/conversations/{id}')
+async def get_conversation(id:str,request:Request):
+    await actor(request)
+    with store.db() as db:
+        conversation.require(db,id)
+        messages=[]
+        for row in db.execute('SELECT * FROM messages WHERE conversation_id=? ORDER BY created',(id,)):
+            msg=dict(row);msg['attachments']=json.loads(msg['attachments']);msg['proposals']=json.loads(msg['proposals'])
+            msg['accepted']={str(i):r[0] for i in range(len(msg['proposals'])) if (r:=db.execute('SELECT value FROM settings WHERE key=?',('accepted:'+msg['id']+':'+str(i),)).fetchone())}
+            messages.append(msg)
+        photos=[{**dict(r),'url':'/editorial/media/'+r['filename']} for r in db.execute('SELECT id,name,filename FROM chat_photos WHERE conversation_id=?',(id,))]
+        items=[]
+        for row in db.execute('SELECT item_id FROM demand_items WHERE conversation_id=? ORDER BY rowid',(id,)):
+            item=store.item(row[0],db)
+            for key,field in [('media','media_url'),('blog_media','blog_media_url'),('source_media','source_media_url'),('source_media_2','source_media_2_url'),('source_media_3','source_media_3_url')]:
+                item[field]='/editorial/media/'+item['media'][key] if item['media'].get(key) else None
+            item['deliveries']=[{**dict(r),'result':json.loads(r['result'])} for r in db.execute('SELECT * FROM deliveries WHERE item_id=?',(item['id'],))]
+            items.append(item)
+    return {'messages':messages,'photos':photos,'items':items}
+
+@app.post('/editorial/api/conversations/{id}/messages')
+async def send_message(id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    return {'id':conversation.send(id,data,who)}
+
+@app.post('/editorial/api/conversations/{id}/photos')
+async def add_photo(id:str,request:Request):
+    await actor(request)
+    data=await binary_body(request,12*1024*1024)
+    from urllib.parse import unquote
+    try:return await asyncio.to_thread(conversation.photo,id,data,unquote(request.headers.get('x-file-name','Photo produit')))
+    except MediaBlocked as exc:raise Conflict(str(exc))
+
+@app.post('/editorial/api/conversations/{id}/proposals/{message_id}')
+async def prepare_proposal(id:str,message_id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    # Calendar reads happen outside the write transaction; local reservations are
+    # then rechecked under the transaction to serialize simultaneous requests.
+    occupied=await asyncio.to_thread(calendar_times)
+    return {'id':conversation.accept(id,message_id,data,who,occupied)}
+
+@app.post('/editorial/api/conversations/{id}/retry/{message_id}')
+async def retry_message(id:str,message_id:str,request:Request):
+    await actor(request);await body(request)
+    with store.db() as db:
+        if not db.execute("SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role='user' AND status='failed'",(message_id,id)).fetchone():raise Conflict('Ce message ne peut pas être relancé.')
+        if db.execute("SELECT 1 FROM messages WHERE conversation_id=? AND status IN ('queued','running')",(id,)).fetchone():raise Conflict('Une réponse est déjà en cours.')
+        db.execute("UPDATE messages SET status='queued',error=NULL WHERE id=?",(message_id,))
+        db.execute("DELETE FROM jobs WHERE kind='chat' AND target=?",(message_id,));store.job(db,'chat',message_id)
+    return {'ok':True}
+
+@app.post('/editorial/api/transcribe')
+async def transcribe(request:Request):
+    await actor(request)
+    data=await binary_body(request,12*1024*1024)
+    url=os.environ.get('TRANSCRIPTION_URL')
+    if not url:raise Conflict('La dictée est momentanément indisponible. Vous pouvez écrire votre brief.')
+    def invoke():
+        try:
+            response=requests.post(url.rstrip('/')+'/transcribe',data=data,headers={'Authorization':'Bearer '+os.environ['CODEX_BRIDGE_TOKEN'],'Content-Type':'application/octet-stream'},timeout=180)
+            if response.status_code==429:raise Conflict('Une transcription est déjà en cours. Réessayez dans un instant.')
+            if response.status_code==422:raise Conflict('Audio illisible ou trop long. Dictez un message de moins de trois minutes.')
+            if response.status_code!=200:raise Conflict('La transcription est indisponible. Votre message n’a pas été envoyé à l’IA.')
+            text=response.json().get('text','')
+            if not isinstance(text,str) or len(text)>6000:raise ValueError()
+            return {'text':text}
+        except requests.RequestException:raise Conflict('La transcription a pris trop de temps. Réessayez avec un message plus court.')
+        except ValueError:raise Conflict('Réponse de transcription invalide.')
+    return await asyncio.to_thread(invoke)

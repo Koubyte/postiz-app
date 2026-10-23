@@ -22,6 +22,17 @@ export const useMenuItem = () => {
 
   const firstMenu = [
     {
+      name: 'Studio IA',
+      path: '/editorial/',
+      onClick: () => window.location.assign('/editorial/#discussion'),
+      icon: (
+        <svg width="23" height="23" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4M8 22h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+    {
       name: isGeneral ? t('calendar', 'Calendar') : t('launches', 'Launches'),
       icon: (
         <svg

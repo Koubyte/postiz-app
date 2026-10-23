@@ -7,6 +7,7 @@
     <title>Studio éditorial · Planète Laser</title>
     <link rel="stylesheet" href="/editorial/static/style.css" />
     <script src="/editorial/static/app.js" defer></script>
+    <script src="/editorial/static/chat.js" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Aller au contenu</a>
@@ -27,8 +28,8 @@
         <div>
           <p class="eyebrow">LE MATÉRIEL PREND VIE</p>
           <h1>
-            Votre prochaine semaine,<br /><span
-              >prête à prendre la parole.</span
+            Vos idées prennent vie,<br /><span
+              >à votre rythme.</span
             >
           </h1>
           <p class="intro">
@@ -37,6 +38,7 @@
           </p>
         </div>
         <div class="hero-actions">
+          <a class="button primary" href="#discussion">Parler à l’IA · post à la demande</a>
           <button class="button primary" id="request-open">
             ＋ Mettre un article en avant</button
           ><button class="button secondary" id="prepare" disabled>
@@ -58,6 +60,36 @@
         <a class="button primary" href="/auth/login">Se connecter</a>
       </section>
       <section id="workspace" aria-busy="true">
+        <nav class="studio-tabs" aria-label="Mode de création">
+          <a href="#discussion" id="tab-chat">Parler à l’IA</a>
+          <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
+        </nav>
+        <section id="chat-panel" hidden aria-labelledby="chat-title">
+          <div class="section-heading"><div><p class="eyebrow">VOS POSTS À LA DEMANDE</p><h2 id="chat-title">Une idée ? Parlons-en.</h2></div><button class="button secondary" id="chat-new">Nouvelle discussion</button></div>
+          <p class="muted">Un nouveau produit, une arrivée en magasin ou un conseil à partager. Ces posts s’ajoutent à votre semaine, avec au moins 2 heures entre deux sujets. Vous validez chaque publication.</p>
+          <label class="chat-history-label">Vos discussions<select id="chat-history" aria-label="Choisir une discussion"></select></label>
+          <div class="chat-layout">
+            <div class="chat-thread">
+              <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
+              <div id="chat-error" class="notice error" role="alert" hidden></div>
+              <form id="chat-form" class="chat-composer">
+                <label>Votre demande concerne<select id="chat-target"><option value="">De nouveaux posts / une question</option></select></label>
+                <label for="chat-text">Votre brief</label>
+                <textarea id="chat-text" rows="4" maxlength="6000" placeholder="Prépare 3 posts pour aujourd’hui : le Hailun HD300, le Casio CDP-S110 et un conseil pour choisir son piano. Pas de prix. On vient de les recevoir en magasin."></textarea>
+                <div id="chat-attachments" class="chat-attachments"></div>
+                <div class="chat-tools">
+                  <button type="button" id="chat-mic" class="button secondary" aria-pressed="false">🎙 Dicter</button>
+                  <button type="button" id="chat-photo" class="button secondary">＋ Photos</button>
+                  <input id="chat-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
+                  <button type="submit" id="chat-send" class="button primary">Envoyer le brief</button>
+                </div>
+                <p id="chat-voice-status" class="hint" role="status">Dictez jusqu’à 3 minutes, puis relisez le texte avant de l’envoyer.</p>
+              </form>
+            </div>
+            <aside class="chat-results" aria-labelledby="chat-results-title"><h3 id="chat-results-title">Vos posts ponctuels</h3><p class="hint">Textes, visuels et horaire à valider ici avant tout envoi vers Postiz.</p><div id="chat-items"></div></aside>
+          </div>
+        </section>
+        <div id="weekly-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">LE CALENDRIER</p>
@@ -94,6 +126,7 @@
           <summary>Journal du studio</summary>
           <div id="events"></div>
         </details>
+        </div>
       </section>
       <footer>
         Planète Laser · Charte « Le matériel prend vie »<span

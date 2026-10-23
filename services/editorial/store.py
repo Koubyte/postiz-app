@@ -40,6 +40,10 @@ class Store:
             CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT NOT NULL, message TEXT NOT NULL, actor TEXT);
             CREATE TABLE IF NOT EXISTS published (slug TEXT PRIMARY KEY, item_id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS revisions (item_id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY(item_id,revision));
+            CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, created TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, body TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]', target TEXT, target_revision INTEGER, status TEXT NOT NULL, proposals TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL, error TEXT, UNIQUE(conversation_id,id));
+            CREATE TABLE IF NOT EXISTS chat_photos (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, name TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS demand_items (item_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, proposal_index INTEGER NOT NULL, brief TEXT NOT NULL, product TEXT, UNIQUE(message_id,proposal_index));
             ''')
             db.execute("INSERT OR IGNORE INTO settings VALUES ('paused','false')")
         os.chmod(self.path, 0o600)
@@ -133,6 +137,8 @@ class Store:
     def recover(self):
         with self.db() as db:
             db.execute("UPDATE jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,updated=? WHERE status='running'",(now(),))
+            db.execute("UPDATE messages SET status=(SELECT status FROM jobs WHERE kind='chat' AND target=messages.id),error='Réponse interrompue ; réessayez si nécessaire.' WHERE status IN ('running','queued') AND EXISTS(SELECT 1 FROM jobs WHERE kind='chat' AND target=messages.id)")
+            db.execute("UPDATE items SET status='failed',error='Préparation interrompue. Vous pouvez la relancer.' WHERE status IN ('generating','rendering') AND EXISTS(SELECT 1 FROM jobs WHERE target=items.id AND status='failed')")
             for row in db.execute("SELECT target FROM jobs WHERE kind='revise' AND status='failed'").fetchall():
                 self.fail_revision(db,row[0],'Modification interrompue. Le plan initial est conservé ; vous pouvez réessayer.')
             db.execute("UPDATE items SET status='blocked',error='Envoi interrompu : vérifier dans Postiz avant toute nouvelle tentative.' WHERE status='publishing'")

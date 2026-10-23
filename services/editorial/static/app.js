@@ -1275,7 +1275,8 @@ function openItem(item) {
       state.dirty = false;
       dialog.close();
       await refresh(true);
-      const updated = currentWeek()?.items?.find((i) => i.id === item.id);
+      await window.refreshChat?.();
+      const updated = currentWeek()?.items?.find((i) => i.id === item.id) || window.chatItem?.(item.id);
       if (updated) openItem(updated);
       toast(
         'Modifications enregistrées. Relisez cette nouvelle version avant de l’approuver.',
@@ -1296,6 +1297,7 @@ function openItem(item) {
       state.dirty = false;
       dialog.close();
       await refresh(true);
+      await window.refreshChat?.();
       toast('Version approuvée pour la date affichée.');
     });
   retry.onclick = () =>
@@ -1306,6 +1308,7 @@ function openItem(item) {
       state.dirty = false;
       dialog.close();
       await refresh(true);
+      await window.refreshChat?.();
       toast('La préparation de ce contenu est relancée.');
     });
   reject.onclick = () => {
@@ -1329,6 +1332,7 @@ function openItem(item) {
         state.dirty = false;
         dialog.close();
         await refresh(true);
+        await window.refreshChat?.();
         toast('Contenu refusé. Il ne sera pas publié.');
       });
     reject.disabled = true;

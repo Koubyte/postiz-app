@@ -99,3 +99,51 @@ Unapproved, rejected and failed revisions never enter the calendar. Blog project
 remains due-time gated. Reconciliation accepts Postiz's postId response and covers
 future scheduled dates. Studio pause stops new transfers; existing Postiz schedules
 must be changed/cancelled in Postiz.
+
+## On-demand conversations
+
+`/editorial/#discussion` is the mobile-friendly chat inside the Postiz origin;
+Postiz's **Studio IA** navigation entry opens it using the existing owner session.
+Conversations, messages, reference photos and `demand_items` are separate from
+weekly plans. A brief can propose up to five additional social subjects. Each
+proposal displays its date (Paris), optional owner-confirmed price and reference
+photos. Preparing it creates a draft and a reference-guided visual; it never
+approves or publishes anything. A correction is bound to the explicitly selected
+on-demand post and its revision. All other posts remain unchanged.
+
+Jobs, message nonces and proposal acceptance markers are durable/idempotent.
+Inference only returns replies/briefs; it has no delivery authority. Generated
+content uses the existing review, media provenance, hash and approval pipeline.
+The owner must approve the exact final captions, visual and date. Direct edits
+or regeneration revoke approval. Already transferred posts are managed in Postiz.
+
+Additional posts reserve at least **120 minutes** between different subjects,
+including weekly plans, pending studio drafts, and queued/published native Postiz
+posts. Facebook and Instagram variants of the same subject share their slot.
+A conflicting requested time advances to the next available slot (09:00 next day
+if a shift passes 21:00 Paris). The resulting time is shown before approval.
+Approval and delivery recheck the calendar and block on newly introduced conflicts,
+rather than silently moving an approved post. The native Postiz editor itself can
+still be used to schedule close posts manually; this guard applies to studio
+on-demand preparation and delivery. Supported planning horizon: 90 days.
+
+The microphone uses MediaRecorder with runtime WebM/MP4 support detection. Dictation
+stops at 175 seconds or when the page goes into the background. It is transcribed
+by the private `services/transcription` Faster Whisper service on CPU (small model,
+int8, two threads, 3 GiB limit). The text goes into the editable composer, never
+automatically to the agent. Speech is not retained. Recording permission denial,
+silence, unavailable model, unsupported browser and oversized audio leave typing
+available. Production microphone hardware needs checking on the user's actual
+phone; browser and container checks cannot certify every device.
+
+`TRANSCRIPTION_URL=http://transcription:8789` is private, without host port or public
+route. It authenticates service calls with the existing bridge secret passed as
+`TRANSCRIPTION_TOKEN`; no paid speech API or new browser credential is used.
+The model is downloaded at image build time and runtime is offline. JPEG/PNG/WebP
+and iPhone HEIC references are normalized, metadata stripped and stored privately.
+The chat sees filenames/descriptions; photo pixels are passed to the image generator,
+not the text-only inference bridge. It must ask for a product name when unspecified.
+
+Validation: `python -m pytest services/editorial/test_conversation.py
+services/editorial/test_workflow.py services/editorial/test_media.py` plus browser
+checks and a server transcription fixture. No live smoke test approves a post.

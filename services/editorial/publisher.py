@@ -16,6 +16,14 @@ class Publisher:
         return r.json()
     def check(self,item):
         if not item['approval_hash'] or item['approval_hash']!=self.store.content_hash(item):raise Conflict('La version ne correspond plus à celle approuvée.')
+        with self.store.db() as db:
+            demand=db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(item['id'],)).fetchone()
+        if demand:
+            from spacing import calendar_times,reservations,available_slot
+            occupied=calendar_times(self)
+            with self.store.db() as db:
+                if available_slot(item['scheduled_at'],occupied+reservations(db,item['id']))!=item['scheduled_at']:
+                    raise Conflict('Le calendrier a changé : un autre sujet est à moins de deux heures. Choisissez un nouvel horaire et validez à nouveau.')
         for key,expected in item['media'].get('hashes',{}).items():
             path=self.store.root/'media'/item['media'][key]
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:raise Conflict('Un média a changé après validation.')
