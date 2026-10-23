@@ -43,6 +43,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, created TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, body TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]', target TEXT, target_revision INTEGER, status TEXT NOT NULL, proposals TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL, error TEXT, UNIQUE(conversation_id,id));
             CREATE TABLE IF NOT EXISTS chat_photos (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, name TEXT NOT NULL, filename TEXT NOT NULL, sha256 TEXT NOT NULL, created TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS visual_directions (item_id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(item_id,revision));
             CREATE TABLE IF NOT EXISTS companion_articles (parent_id TEXT PRIMARY KEY, article_id TEXT UNIQUE NOT NULL, parent_revision INTEGER NOT NULL, parent_hash TEXT NOT NULL, actor TEXT NOT NULL, created TEXT NOT NULL, article_revision INTEGER NOT NULL, state TEXT NOT NULL, auto_hash TEXT, source_snapshot TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS demand_items (item_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, proposal_index INTEGER NOT NULL, brief TEXT NOT NULL, product TEXT, UNIQUE(message_id,proposal_index));
             ''')

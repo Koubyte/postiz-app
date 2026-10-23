@@ -247,3 +247,23 @@ records the agent's confirmation assertion, but cannot independently verify that
 the human spoke those words or saw the image in Grok. The connector's bearer key
 therefore now carries the explicitly requested approval capability. The Bot's
 instructions prohibit inventing consent or treating a creation brief as approval.
+
+
+### Varied product-aware photographic direction
+
+`scenes.py` requests three concrete compatible directions (setting, lighting,
+angle, staging and product-fit explanation) from the text model before image
+creation. The choice favors settings outside the latest two directions, then
+less-used settings/combinations in the latest twelve, shared across social and
+blog. Legacy scene briefs also inform the first choices. An explicitly requested
+location can remain fixed while lighting and framing vary. This is direction
+memory, not pixel-similarity detection or a claim of guaranteed visual diversity.
+
+The selected `pl-scenes-v2` direction is durable per item/revision, survives
+image retries, and is included in the final media/approval hash. Concurrent edits
+reject a stale direction. The image prompt no longer imposes warm light, wood,
+matte materials or green decor. The existing logo/type/layout charter remains
+`pl-social-v1`; exact photo references and acknowledgment checks are unchanged.
+The rules require product-appropriate contexts and reject implied unverified
+uses (weather resistance, stage capacity, compatibility or supplied accessories).
+No existing post is regenerated or approval changed during deployment.

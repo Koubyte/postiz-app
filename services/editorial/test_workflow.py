@@ -361,11 +361,15 @@ def test_reference_photo_is_sent_to_generator_and_acknowledged(store,monkeypatch
         assert Image.open(io.BytesIO(raw)).getpixel((100,100))[:3]==(255,165,0)
         assert 'PHOTO DE RÉFÉRENCE JOINTE' in payload['prompt']
         return {'reference_image_sha256':hashlib.sha256(raw).hexdigest(),'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]}
-    gen=Generator(store);monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
+    from test_scenes import directions
+    gen=Generator(store);monkeypatch.setattr(gen,'ask',lambda _:directions());monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
     item=store.item(identifier)
     assert len(calls)==1 and item['status']=='review' and item['approval_hash'] is None
     assert item['media']['provenance']['image_mode']=='reference-guided-generation'
     assert 'mask_media' not in item['media']
+    assert item['media']['visual_direction']['setting']=='home'
+    assert 'Piano dans une pièce de vie claire' in calls[0]['prompt']
+    assert 'Lumière chaleureuse naturelle, bois et matériaux mats' not in calls[0]['prompt']
     assert item['media']['source_media']
     # An older bridge silently ignoring the reference must never create a product visual.
     monkeypatch.setattr(gen,'bridge',lambda *args,**kwargs:{'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]})
@@ -427,7 +431,8 @@ def test_three_references_sent_acknowledged_and_sealed(store,monkeypatch):
         refs=[base64.b64decode(r['b64_json']) for r in payload['reference_images']]
         assert len(refs)==3 and len(set(refs))==3
         return {'reference_images_sha256':[hashlib.sha256(r).hexdigest() for r in refs],'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]}
-    gen=Generator(store);monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
+    from test_scenes import directions
+    gen=Generator(store);monkeypatch.setattr(gen,'ask',lambda _:directions());monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
     item=store.item(identifier)
     assert item['status']=='review' and not item['approval_hash']
     for key in ('source_media','source_media_2','source_media_3'):

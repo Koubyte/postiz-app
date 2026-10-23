@@ -129,7 +129,7 @@ class Generator:
             if p['id'] not in {x['id'] for x in selected} and p.get('category') not in categories:
                 selected.append({**p,'price_mode':'hide'});categories.add(p.get('category'))
         if len(selected)<3:raise GenerationError('Trois produits distincts ne peuvent pas être sélectionnés.')
-        value=self.ask('Préparez le plan éditorial pour la semaine du '+week['week']+'. Sept sujets, au moins trois produits distincts parmi les références imposées ci-dessous. Chaque demande prioritaire doit apparaître une fois. Les autres créneaux sont des conseils utiles et une découverte documentée. Évitez les sujets déjà couverts. Proposez aussi UN article de blog (guide ou actualité), lié à un sujet social. Pas encore de rédaction finale.\nProduits imposés:'+dumps(selected)+'\nHistorique:'+dumps([{'titles':[s.get('title') for s in h.get('subjects',[])],'article':h.get('article',{}).get('title')} for h in history])+'\nFormat JSON exact: {"subjects":[{"slot":0,"kind":"product|advice|news","title":"titre","angle":"angle précis","product_id":"id imposé ou null","scene":"décor réaliste pertinent, surface et lumière"}],"article":{"title":"titre","angle":"plan détaillé en quelques phrases","product_id":"id imposé ou null","social_slot":6},"sources":[{"title":"source","url":"https://..."}]}. Slots 0 à 6 exactement ; les articles existants traitent choix clavier/piano débutant et choix contrôleur DJ débutant : proposer des compléments.')
+        value=self.ask('Préparez le plan éditorial pour la semaine du '+week['week']+'. Sept sujets, au moins trois produits distincts parmi les références imposées ci-dessous. Chaque demande prioritaire doit apparaître une fois. Les autres créneaux sont des conseils utiles et une découverte documentée. Évitez les sujets déjà couverts. Variez aussi les décors entre les sept sujets en fonction des usages : intérieur de vie, cours, répétition, scène, installation, création ou écoute selon les produits. Ne déclinez pas sept studios chauds en bois. Proposez aussi UN article de blog (guide ou actualité), lié à un sujet social. Pas encore de rédaction finale.\nProduits imposés:'+dumps(selected)+'\nHistorique:'+dumps([{'titles':[s.get('title') for s in h.get('subjects',[])],'article':h.get('article',{}).get('title')} for h in history])+'\nFormat JSON exact: {"subjects":[{"slot":0,"kind":"product|advice|news","title":"titre","angle":"angle précis","product_id":"id imposé ou null","scene":"décor réaliste pertinent, surface et lumière"}],"article":{"title":"titre","angle":"plan détaillé en quelques phrases","product_id":"id imposé ou null","social_slot":6},"sources":[{"title":"source","url":"https://..."}]}. Slots 0 à 6 exactement ; les articles existants traitent choix clavier/piano débutant et choix contrôleur DJ débutant : proposer des compléments.')
         plan=validate_plan(value,selected,week['week'])
         plan['products']=selected;plan['unresolved_requests']=unresolved;plan['brand_version']='pl-social-v1';plan['sources']=safe_sources(value.get('sources',[]))
         with self.store.db() as db:
@@ -203,7 +203,7 @@ class Generator:
         content=validate_content(content,item['kind'])
         uncertainty=content.pop('uncertainty','').strip()
         if uncertainty:raise GenerationError('Information à confirmer : '+uncertainty[:420])
-        content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un coin musique chaleureux et réaliste')
+        content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un environnement pertinent pour le produit et son usage, à varier selon les scènes récentes')
         if feedback:content['_visual_feedback']=str(feedback)[:2000]
         price_text=None
         if product and product.get('price_mode','hide')!='hide':
@@ -255,13 +255,15 @@ class Generator:
                 references.append(reference)
                 reference_payloads.append({'mime_type':'image/png','b64_json':base64.b64encode(reference).decode()})
             if sum(map(len,references))>12*1024*1024:raise GenerationError('Les photos de référence dépassent la taille totale autorisée.')
-        prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Lumière chaleureuse naturelle, bois et matériaux mats, ambiance soignée, accents verts discrets. Aucun texte publicitaire, prix, habillage graphique ou watermark ajouté. Pas de fausse photo de notre magasin. Composition élégante, naturelle, photographique. Image finale 4:5, sujet principal entier dans la zone centrale, espace calme autour du sujet pour les recadrages. '
+        from scenes import choose, RULES
+        direction=choose(self.store,self.ask,item,brief,product)
+        prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Décor, lumière et cadrage adaptés à l’usage du produit selon la direction ci-dessous. La charte graphique sera appliquée après génération ; aucune teinte verte ou matière récurrente imposée dans la photo. Aucun texte publicitaire, prix, habillage graphique ou watermark ajouté. Pas de fausse photo de notre magasin. Composition élégante, naturelle, photographique. Image finale 4:5, sujet principal entier dans la zone centrale, espace calme autour du sujet pour les recadrages. '
         if product:
             prompt+='Utilisez impérativement la PHOTO DE RÉFÉRENCE JOINTE : '+product['title']+' (EAN '+str(product.get('ean',''))+'). Créez une vraie mise en scène de CE produit dans un décor musical soigné et crédible. Le produit doit être présent dans l’image finale, posé naturellement ou utilisé de manière plausible. Préservez son modèle exact, sa couleur, ses proportions, le nombre et la disposition de ses commandes, ses logos et ses particularités visibles. Ne changez pas de variante et n’inventez pas d’accessoire fourni. Harmonisez lumière, perspective, matière et ombres pour une photographie cohérente. Ne produisez pas un décor vide, un détourage, un montage collé ou un objet transparent. Ne vous contentez pas de décrire la référence : incluez-la dans l’appel à imagegen. '
         else:prompt+='Scène pertinente illustrant ce conseil, sans marque ni produit identifiable, aucun schéma technique inventé. '
         if product and product.get('requested_variants'):
             prompt+=' Coloris à mettre en scène ensemble, chacun avec sa teinte exacte depuis la référence : '+dumps(product['requested_variants'])+'. Si la photo comprend d’autres coloris, montrez UNIQUEMENT les coloris demandés, pas tous ceux de la planche. '
-        prompt+='Direction du décor (adaptez toute ancienne mention de surface vide : le produit doit être intégré dans la scène finale) : '+str(item['content'].get('scene','Un coin de pratique musicale chaleureux.'))[:800]
+        prompt+='\nRègles de mise en scène : '+RULES+'\nDirection photographique retenue : '+dumps(direction)+'\nLes anciennes ambiances génériques sont remplacées par cette direction. Respectez le lieu, la lumière, le cadrage et la justification d’usage retenus.'
         if item['content'].get('_visual_feedback'):prompt+='\nCorrection souhaitée : '+item['content']['_visual_feedback']
         if product and product.get('reference_images'):
             prompt+=' Correspondance des références jointes, dans cet ordre : '+dumps([{'reference':i+1,'coloris':r['label']} for i,r in enumerate(product['reference_images'])])+'. Montrez ensemble un exemplaire de chaque coloris demandé. '
@@ -280,7 +282,7 @@ class Generator:
         hashes={}
         for key in ('media','blog_media','source_media','source_media_2','source_media_3','mask_media','background_media'):
             if assets.get(key):hashes[key]=hashlib.sha256((self.store.root/'media'/assets[key]).read_bytes()).hexdigest()
-        assets['hashes']=hashes;assets['product_snapshot']=product;assets['brand_version']='pl-social-v1'
+        assets['hashes']=hashes;assets['product_snapshot']=product;assets['brand_version']='pl-social-v1';assets['visual_direction']=direction
         with self.store.db() as db:
             current=self.store.item(id,db)
             if current['revision']!=item['revision']:raise Conflict('Le contenu a changé pendant la création du visuel.')
@@ -297,7 +299,7 @@ def validate_plan(value,products,week):
         kind=s.get('kind')
         if kind not in ('product','advice','news'):raise GenerationError('Type de sujet invalide.')
         if kind=='product' and not p:raise GenerationError('Un post produit nécessite une référence.')
-        subjects.append({'slot':slot,'kind':kind,'title':bounded_text(s['title'],160),'angle':bounded_text(s['angle'],2000),'product_id':p,'scene':bounded_text(s.get('scene','Scène musicale chaleureuse'),800),'scheduled_at':s.get('scheduled_at') or planned_date(week,slot,12)})
+        subjects.append({'slot':slot,'kind':kind,'title':bounded_text(s['title'],160),'angle':bounded_text(s['angle'],2000),'product_id':p,'scene':bounded_text(s.get('scene','Un environnement cohérent avec le sujet, distinct des scènes récentes'),800),'scheduled_at':s.get('scheduled_at') or planned_date(week,slot,12)})
     if len({s['product_id'] for s in subjects if s['kind']=='product'})<3:raise GenerationError('Le plan doit mettre en avant trois produits distincts au minimum.')
     if any(p.get('request_id') and p['id'] not in {s['product_id'] for s in subjects} for p in products):raise GenerationError('Une demande prioritaire manque dans le plan.')
     # The week groups a batch of briefs; only defaults are tied to weekdays.

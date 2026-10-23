@@ -13,7 +13,7 @@ Cette charte est appliquée par le studio éditorial dans les gabarits de compos
 - Typographies locales déjà employées : Outfit pour les titres, Inter pour le texte ; Orbitron est également disponible.
 - Positionnement affiché : instruments, sonorisation et éclairage à Forbach depuis 1989. Sources : `storefront/app/globals.css`, `storefront/app/layout.tsx`, `storefront/components/home/HomeHero.tsx`, `storefront/components/layout/Footer.tsx`.
 
-**Direction retenue pour cette proposition : « Le matériel prend vie ».** Des produits reconnaissables dans un contexte musical crédible, une photographie soignée et chaleureuse, un repère vert discret et un habillage stable. Le décor explique un usage ; le produit demeure le sujet.
+**Direction retenue pour cette proposition : « Le matériel prend vie ».** Des produits reconnaissables dans un contexte musical crédible, une photographie soignée aux ambiances variées, un repère vert dans l’habillage et une composition graphique stable. Le décor explique un usage ; le produit demeure le sujet.
 
 Les règles qui suivent sont des choix proposés, pas des caractéristiques de la marque déjà validées. Le rose, le violet et Orbitron restent hors du système social de base afin de limiter les variations.
 
@@ -75,10 +75,12 @@ Un contenu sur le magasin emploie une photographie réelle du magasin ou de l'é
 
 ## 5. Bibliothèque de scènes
 
+La direction photographique `pl-scenes-v2` complète l’habillage `pl-social-v1` : ni le bois, ni une lumière chaude, ni un studio ne sont obligatoires. Avant chaque création, le moteur propose trois mises en situation compatibles avec le produit puis privilégie celles qui évitent les deux derniers lieux et les combinaisons lumière/cadrage déjà fréquentes parmi les douze dernières directions. Les décors explicites demandés par le propriétaire restent prioritaires ; la variété porte alors sur la composition et la lumière. Le choix est conservé pour les reprises d’une même version.
+
 | Famille | Décor de référence | Intention lumineuse | Vigilances |
 | --- | --- | --- | --- |
-| Guitares, basses | Coin répétition, studio intime, scène acoustique | Lumière latérale chaude, bois et textiles sobres | Cordes, mécaniques, forme et nombre de micros exacts |
-| Claviers | Home studio ordonné, espace de pratique, petite scène | Lumière naturelle ou chaude, fond légèrement flou | Nombre de touches, support et dimensions cohérents |
+| Guitares, basses | Pièce de vie, salle de cours, répétition, scène acoustique | Jour, neutre, contrastée ou scène selon le contexte | Cordes, mécaniques, forme et nombre de micros exacts |
+| Claviers | Salon, salle de musique, cours individuel, scène intérieure | Jour diffus, éclairage neutre ou lumière de scène adaptée | Nombre de touches, support et dimensions cohérents |
 | Audio et microphones | Bureau de création, cabine de voix, petite prestation | Matériaux mats, éclairage doux, matériel lisible | Connectiques et montage plausibles ; pas de compatibilité suggérée sans vérification |
 | Sonorisation | Salle de répétition, petite scène, prestation adaptée | Contexte perceptible et produit au premier plan | Échelle crédible ; ne pas suggérer une capacité de salle non documentée |
 | DJ | Poste de mixage préparé, régie sobre | Ambiance de soirée modérée, commandes lisibles | Disposition des commandes préservée, accessoires non inclus clairement distincts |
