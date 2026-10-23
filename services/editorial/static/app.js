@@ -1119,7 +1119,6 @@ function openItem(item) {
     const md = add('markdown', 'Article · Markdown', 'textarea', {
       class: 'blog-editor',
       rows: 18,
-      maxlength: 18000,
     });
     const preview = el('details', {}, el('summary', {}, 'Aperçu de l’article'));
     let previewBox = renderMarkdown(content.markdown);

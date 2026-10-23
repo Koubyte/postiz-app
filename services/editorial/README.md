@@ -267,3 +267,12 @@ matte materials or green decor. The existing logo/type/layout charter remains
 The rules require product-appropriate contexts and reject implied unverified
 uses (weather resistance, stage capacity, compatibility or supplied accessories).
 No existing post is regenerated or approval changed during deployment.
+
+
+### Blog length
+
+Blog bodies require at least 500 words and have no editorial upper word/character
+limit. The Markdown editor has no maxlength. Blog briefs, rewrite instructions
+and previous article bodies are passed through without editorial truncation;
+social caption and metadata limits remain unchanged. HTTP/model transport bounds
+still protect resource usage and are distinct from an article-length rule.

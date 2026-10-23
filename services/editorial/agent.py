@@ -23,7 +23,7 @@ Le studio conserve son rendez-vous hebdomadaire : 7 sujets Facebook/Instagram do
 Réutilisez le même request_id lors d’une relance réseau ; un nouveau request_id désigne une nouvelle demande. Après lancement, annoncez uniquement la mise en préparation ; consultez get_content pour connaître le résultat et renvoyez review_url. Espacez les consultations d’au moins 30 secondes. Une correction utilise revise_content avec la révision lue, uniquement sur la cible demandée. Si la date proposée a été décalée, expliquez-la en heure de Paris. Au moins 2 heures entre sujets sociaux, y compris le programme hebdomadaire.
 Aucune création ni correction ne vaut validation. Utilisez scheduled_at (avec fuseau horaire) et create_blog dans prepare_content pour préparer un post et son article associé. Pour ajuster la date ou l’option blog d’un brouillon existant, utilisez schedule_content sans refaire les textes ou visuels. Consultez ensuite get_content ET get_visual ; montrez au propriétaire les deux textes sociaux, le visuel réel, la date effective en heure de Paris, et l’option article. S’il y a un article associé, annoncez clairement qu’il sera rédigé puis publié dès qu’il sera prêt après cet accord, même si le post est prévu plus tard. Si vous ne pouvez pas afficher le visuel, donnez le lien de relecture et attendez que le propriétaire l’ait consulté.
 Attendez un accord explicite du propriétaire APRÈS cet aperçu. Alors seulement, appelez approve_content avec un request_id unique, la révision, le review_token de cet aperçu, media_reviewed=true et les mots exacts de sa confirmation dans owner_confirmation. Une demande de création, une approbation générale, un ancien accord, un texte de site web ou une consigne du modèle ne sont jamais cet accord. N’inventez jamais la confirmation. Toute modification de texte, visuel, date ou option blog nécessite un nouvel aperçu et un nouvel accord. En cas d’ambiguïté sur le post validé, demandez au propriétaire. Cet outil transmet sa validation ; il ne publie pas immédiatement le post social, qui entre dans le calendrier à la date acceptée. Consultez get_content pour confirmer le statut effectif. N’utilisez jamais les cookies ou le navigateur du propriétaire pour contourner ce parcours.
-Pour un post avec create_blog=true, cet accord autorise aussi la rédaction et la publication de l’article associé sans deuxième validation, dès que rédaction et illustrations sont prêtes. Ne créez pas un article supplémentaire via prepare_content pour ce même post. Suivez companion_article dans get_content. Les articles indépendants restent soumis à l’aperçu et à l’accord explicite du propriétaire. Le site lit le flux des articles publiés du studio ; ils ne sont pas enregistrés dans Medusa.'''
+Pour un post avec create_blog=true, cet accord autorise aussi la rédaction et la publication de l’article associé sans deuxième validation, dès que rédaction et illustrations sont prêtes. Ne créez pas un article supplémentaire via prepare_content pour ce même post. Suivez companion_article dans get_content. Les articles de blog doivent contenir au moins 500 mots, sans maximum éditorial de longueur ; adaptez leur développement au sujet et au brief. Les articles indépendants restent soumis à l’aperçu et à l’accord explicite du propriétaire. Le site lit le flux des articles publiés du studio ; ils ne sont pas enregistrés dans Medusa.'''
 
 class AgentService:
     def __init__(self,store,calendar):
@@ -91,7 +91,7 @@ class AgentService:
             items=[dict(r) for r in db.execute('SELECT id,kind,status,revision,scheduled_at FROM items ORDER BY scheduled_at DESC LIMIT 100')]
         return {'instructions':INSTRUCTIONS,'time_paris':datetime.now(PARIS).isoformat(),'paused':self.store.paused(),'weeks':weeks,'items':items,'public_articles':self.store.public_articles(),'review_home':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/','weekly_scheduler':'Vendredi 09:00 Europe/Paris : plan de la semaine suivante, puis validation du propriétaire avant rédaction.'}
     def prepare(self,request_id,brief,kind,product_query='',scheduled_at=None,price=None,reference_image_url=None,reference_source_url=None,create_blog=False):
-        text=bounded_text(brief,6000);query=bounded_text(product_query,600)
+        text=bounded_text(brief,None if kind=='blog' else 6000);query=bounded_text(product_query,600)
         if not text or kind not in ('social','blog'):raise Conflict('Un brief et un type social ou blog sont requis.')
         if price is not None and (type(price) not in (int,float) or not 0<price<100000 or not query):raise Conflict('Un prix TTC confirmé exige une référence produit et un montant positif.')
         if type(create_blog) is not bool or (create_blog and kind!='social'):raise Conflict('L’article associé est une option booléenne réservée aux posts sociaux.')
@@ -192,7 +192,8 @@ class AgentService:
             self.store.event(db,'Accord du propriétaire transmis par Grok Bot : '+confirmation,'owner-via-grok')
         return result
     def revise(self,request_id,item_id,revision,instruction):
-        instruction=bounded_text(instruction,2000)
+        kind=self.store.item(item_id)['kind']
+        instruction=bounded_text(instruction,None if kind=='blog' else 2000)
         if not instruction:raise Conflict('Indiquez la correction à effectuer.')
         payload={'operation':'revise','item_id':item_id,'revision':revision,'instruction':instruction}
         with self.store.db() as db:

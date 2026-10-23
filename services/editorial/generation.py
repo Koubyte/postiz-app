@@ -15,7 +15,7 @@ from store import now, dumps, planned_date, uid, Conflict
 class GenerationError(ValueError):pass
 
 def bounded_text(value, maximum=12000):
-    if not isinstance(value,str) or len(value)>maximum:raise GenerationError('Texte invalide ou trop long.')
+    if not isinstance(value,str) or (maximum is not None and len(value)>maximum):raise GenerationError('Texte invalide ou trop long.')
     return value.strip()
 
 def safe_sources(value):
@@ -192,13 +192,16 @@ class Generator:
         plan,brief,product=self.context(item)
         if item['kind']=='blog':
             fmt='{"title":str,"headline":str,"excerpt":str,"slug":str,"category":"guides|actualites|produits","markdown":str,"alt":str,"sources":[{"title":str,"url":str}],"uncertainty":str}'
-            instruction='Rédigez un article complet de 700 à 1100 mots, utile et précis. Markdown sans HTML : introduction, H2/H3, étapes pratiques, tableau si utile, erreurs fréquentes, limites, conclusion utile. Pas de H1 dans le corps. Mentionnez vos sources avec liens. Aucune image Markdown : le logiciel ajoute les illustrations validées. Ne pas inventer de conseil technique ou de compatibilité. Le slug doit être unique et sans accent.'
+            instruction='Rédigez un article utile, précis et complet à la longueur nécessaire au sujet et au brief du propriétaire. Au moins 500 mots, sans maximum éditorial de mots ou de caractères : développez utilement le sujet sans remplissage et ne tronquez pas un développement pertinent. Markdown sans HTML : introduction, H2/H3, étapes pratiques, tableau si utile, erreurs fréquentes, limites, conclusion utile. Pas de H1 dans le corps. Mentionnez vos sources avec liens. Aucune image Markdown : le logiciel ajoute les illustrations validées. Ne pas inventer de conseil technique ou de compatibilité. Le slug doit être unique et sans accent.'
         else:
             fmt='{"title":str,"headline":str,"facebook":str,"instagram":str,"alt":str,"sources":[{"title":str,"url":str}],"uncertainty":str}'
             instruction='Rédigez une publication Facebook (90 à 160 mots) et Instagram (70 à 140 mots, maximum 5 hashtags pertinents). Headline : 4 à 7 mots, pas de nom de modèle dans le titre visuel si trop long. Un conseil concret, ton chaleureux et précis, pas de superlatifs creux. Pas de Markdown ou HTML dans les textes sociaux, sauts de ligne autorisés. N’annoncez aucun article à venir et n’ajoutez aucun lien de blog non publié.'
         feedback=item['content'].get('_feedback','') or brief.get('instruction','')
         if product and product.get('note'):instruction+='\nInformation locale fournie directement par le propriétaire (pas une donnée web) : '+str(product['note'])[:3000]+'. Une nouveauté en magasin ainsi confirmée peut être annoncée comme telle ; ne pas la transformer en lancement mondial ni inventer de date, de quantité ou de promotion.'
-        if feedback:instruction+='\nLa correction suivante prime sur les longueurs indicatives ci-dessus. Correction demandée par le propriétaire : '+str(feedback)[:2000]+'\nProposition précédente : '+dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})[:14000]
+        if feedback:
+            correction=str(feedback) if item['kind']=='blog' else str(feedback)[:2000]
+            previous=dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})
+            instruction+='\nLa correction suivante prime sur les longueurs indicatives ci-dessus. Correction demandée par le propriétaire : '+correction+'\nProposition précédente : '+(previous if item['kind']=='blog' else previous[:14000])
         content=self.ask(instruction+'\nLe champ uncertainty doit être exactement une chaîne vide si les faits inclus dans la rédaction sont vérifiés. Sinon décrivez uniquement le point bloquant.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
         content=validate_content(content,item['kind'])
         uncertainty=content.pop('uncertainty','').strip()
@@ -322,7 +325,7 @@ def validate_plan(value,products,week):
 def validate_content(content,kind):
     if not isinstance(content,dict):raise GenerationError('Contenu invalide.')
     allowed=['title','headline','alt','uncertainty']+(['facebook','instagram'] if kind=='social' else ['markdown','excerpt','slug','category'])
-    result={k:bounded_text(content.get(k,''),{'markdown':18000,'instagram':2200,'title':220,'headline':90,'excerpt':1000,'slug':100,'alt':300}.get(k,5000)) for k in allowed}
+    result={k:bounded_text(content.get(k,''),{'markdown':None,'instagram':2200,'title':220,'headline':90,'excerpt':1000,'slug':100,'alt':300}.get(k,5000)) for k in allowed}
     if not result['title'] or not result['headline']:raise GenerationError('Titre manquant.')
     if len(result['headline'])>90:raise GenerationError('Accroche trop longue pour le gabarit.')
     for key in ('title','headline','alt','facebook','instagram') if kind=='social' else ('title','headline','alt','excerpt','markdown'):
@@ -334,7 +337,7 @@ def validate_content(content,kind):
             if not link.startswith(('https://','/')) or link.startswith('//'):raise GenerationError('Lien non autorisé dans l’article.')
         if not re.fullmatch('[a-z0-9]+(?:-[a-z0-9]+)*',result['slug']):raise GenerationError('Slug invalide.')
         if result['category'] not in ('guides','actualites','produits'):raise GenerationError('Catégorie invalide.')
-        if len(result['markdown'].split())<500:raise GenerationError('L’article doit être suffisamment développé.')
+        if len(result['markdown'].split())<500:raise GenerationError('L’article doit contenir au moins 500 mots.')
     result['sources']=safe_sources(content.get('sources',[]))
     if not result['sources']:raise GenerationError('La rédaction doit citer ses sources.')
     return result
