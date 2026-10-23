@@ -373,7 +373,13 @@ async def prepare_proposal(id:str,message_id:str,request:Request):
     who=await actor(request);data=await body(request)
     # Calendar reads happen outside the write transaction; local reservations are
     # then rechecked under the transaction to serialize simultaneous requests.
-    occupied=await asyncio.to_thread(calendar_times)
+    with store.db() as db:
+        message=db.execute('SELECT proposals,target FROM messages WHERE id=? AND conversation_id=?',(message_id,id)).fetchone()
+        index=data.get('index')
+        proposals=json.loads(message['proposals']) if message else []
+        if type(index) is not int or not 0<=index<len(proposals):raise Conflict('Proposition introuvable.')
+        kind=store.item(message['target'],db)['kind'] if message['target'] else proposals[index].get('format','social')
+    occupied=await asyncio.to_thread(calendar_times) if kind=='social' else []
     return {'id':conversation.accept(id,message_id,data,who,occupied)}
 
 @app.post('/editorial/api/conversations/{id}/retry/{message_id}')

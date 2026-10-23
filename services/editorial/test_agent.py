@@ -124,3 +124,18 @@ def test_mcp_transport_auth_and_no_publication_tools(service,monkeypatch):
         assert client.get('/editorial/api/state',headers=headers).status_code==401
         module.agent_service.revoke('owner')
         assert rpc('tools/list').status_code==401
+
+def test_blog_http_preparation_does_not_depend_on_social_calendar(service,monkeypatch):
+    from fastapi.testclient import TestClient
+    from test_conversation import proposed,proposal
+    monkeypatch.setenv('EDITORIAL_DATA',str(service.store.root));monkeypatch.setenv('EDITORIAL_WORKER','false')
+    spec=importlib.util.spec_from_file_location('agent_blog_http_test',Path(__file__).with_name('app.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    async def owner(request):return 'owner'
+    monkeypatch.setattr(module,'actor',owner)
+    monkeypatch.setattr(module,'calendar_times',lambda:(_ for _ in ()).throw(AssertionError('Social calendar not needed')))
+    cid,mid=proposed(module.conversation,module.store,props=[proposal(format='blog',kind='advice',query='',scheduled_at=future())])
+    with TestClient(module.app,base_url='https://postiz.example.com') as client:
+        response=client.post(f'/editorial/api/conversations/{cid}/proposals/{mid}',headers={'Origin':'https://postiz.example.com','X-Editorial-Action':'1'},json={'index':0})
+        assert response.status_code==200
+        assert module.store.item(response.json()['id'])['kind']=='blog'
