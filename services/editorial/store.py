@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -46,6 +46,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS companion_articles (parent_id TEXT PRIMARY KEY, article_id TEXT UNIQUE NOT NULL, parent_revision INTEGER NOT NULL, parent_hash TEXT NOT NULL, actor TEXT NOT NULL, created TEXT NOT NULL, article_revision INTEGER NOT NULL, state TEXT NOT NULL, auto_hash TEXT, source_snapshot TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS demand_items (item_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, proposal_index INTEGER NOT NULL, brief TEXT NOT NULL, product TEXT, UNIQUE(message_id,proposal_index));
             ''')
+            if 'blog_requested' not in {r[1] for r in db.execute('PRAGMA table_info(items)')}:
+                db.execute('ALTER TABLE items ADD COLUMN blog_requested INTEGER NOT NULL DEFAULT 0')
             db.execute("INSERT OR IGNORE INTO settings VALUES ('paused','false')")
         os.chmod(self.path, 0o600)
     @contextmanager
@@ -101,7 +103,7 @@ class Store:
             with self.db() as conn:return self.item(id,conn)
         row=db.execute('SELECT * FROM items WHERE id=?',(id,)).fetchone()
         if not row: raise Conflict('Contenu introuvable.')
-        r=dict(row);r['content']=json.loads(r['content']);r['media']=json.loads(r['media'])
+        r=dict(row);r['blog_requested']=bool(r['blog_requested']);r['content']=json.loads(r['content']);r['media']=json.loads(r['media'])
         linked=db.execute('SELECT a.article_id,a.state,i.status,i.error,d.conversation_id FROM companion_articles a JOIN items i ON i.id=a.article_id JOIN demand_items d ON d.item_id=i.id WHERE a.parent_id=?',(id,)).fetchone()
         r['companion_article']=dict(linked) if linked else None
         grant=db.execute('SELECT parent_id,state,auto_hash FROM companion_articles WHERE article_id=?',(id,)).fetchone()
@@ -131,13 +133,14 @@ class Store:
             if changed_visual:
                 db.execute("DELETE FROM jobs WHERE kind='render' AND target=?",(id,));self.job(db,'render',id)
             self.event(db,'Contenu modifié ; validation précédente annulée.',actor)
-    def approve_item(self,id,revision,actor,media_reviewed,create_blog=False):
+    def approve_item(self,id,revision,actor,media_reviewed,create_blog=False,*,db=None):
         if type(create_blog) is not bool:raise Conflict('Option article invalide.')
         if media_reviewed is not True:raise Conflict('Vérifiez le visuel, la fidélité du produit et les droits des photos avant validation.')
-        with self.db() as db:
+        with (self.db() if db is None else nullcontext(db)) as db:
             item=self.item(id,db);self.check_revision(item,revision)
             if item['status']!='review' or not item['media'].get('media'):raise Conflict('Le contenu et son visuel doivent être prêts à relire.')
             if datetime.fromisoformat(item['scheduled_at']) <= datetime.now(timezone.utc)+timedelta(minutes=5):raise Conflict('Choisissez une date au moins cinq minutes dans le futur.')
+            db.execute('UPDATE items SET blog_requested=? WHERE id=?',(int(create_blog),id))
             approval=self.content_hash(item)
             db.execute("UPDATE items SET status='approved',approval_hash=?,approved_by=?,approved_at=?,error=NULL WHERE id=?",(approval,actor,now(),id))
             # A direct owner approval supersedes any previous automatic article seal.

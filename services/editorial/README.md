@@ -159,10 +159,10 @@ The setup page provides the complete French bot instructions and last-use status
 Do not paste the token into chat, source files, URLs or logs.
 
 The MCP SDK serves stateless Streamable HTTP at `/editorial/agent/mcp`, behind a
-separate bearer gate. It exposes exactly six preparation/read tools:
+separate bearer gate. It exposes eight tools:
 `get_editorial_context`, `get_content`, `get_visual`, `prepare_content`,
-`revise_content`, and `prepare_week`. It has no approval, publication, arbitrary
-HTTP, shell, filesystem or administrative tool. Its token cannot authenticate
+`revise_content`, `prepare_week`, `schedule_content` and `approve_content`.
+It has no arbitrary HTTP, shell, filesystem or administrative tool. Its token cannot authenticate
 any owner API. Origins, hosts, body sizes and queued-work limits are checked.
 
 `prepare_content` queues one social subject (both Facebook and Instagram) or
@@ -197,13 +197,15 @@ owner must add the secret header in Grok Bot and call get_editorial_context.
 ### Optional article authorized with a social post
 
 The owner review card exposes **Créer aussi un article de blog**, unchecked by
-default. Submitting owner approval with `create_blog: true` atomically approves
-the social revision and records a one-to-one article grant. Only this owner API
-(session and CSRF protected) can grant it; MCP has no approval tool or flag.
+default, or preselected when the Bot requested it in the brief. Submitting owner approval with `create_blog: true` atomically approves
+the social revision and records a one-to-one article grant. The owner session API or the explicitly authorized Grok approval relay can grant
+it. Preparing or scheduling a draft with create_blog only requests the option;
+it does not grant approval.
 A dedicated durable job drafts and illustrates the article using the approved
 social text, sources, frozen product and owner photo references. It then seals
 the generated article for publication without a second owner review. The article
-is visible at the social post's scheduled time, or as soon as ready if later.
+is published as soon as its text and illustrations are ready, even if the social
+post is scheduled much later.
 Ordinary standalone and weekly blog articles keep their separate review.
 
 The parent revision/hash and child revision are checked before generation,
@@ -220,3 +222,28 @@ on its own blog pages (feed cache approximately 60 seconds). There is no write
 into Medusa. The weekly schedule and social calendar spacing are unchanged.
 Tests in `test_companion.py` exercise delegation, revocation, recovery and public
 projection using local fakes, with no live article or social publication.
+
+
+### Owner approval relayed through Grok Bot
+
+`prepare_content(create_blog=true, scheduled_at=...)` sets the proposed date and
+companion article checkbox. `schedule_content` adjusts a ready, unapproved draft
+without generating its text or visuals again; it checks social spacing and
+increments the revision. Other items and weekly plans are preserved.
+
+Grok must show both captions, the image from `get_visual`, the effective Paris
+date and the article option, then wait for the owner's explicit agreement.
+`approve_content` records the actual confirmation words and checks the exact
+review token (content, image metadata, revision, date and article option) plus a
+matching served visual. New edits require a new preview and agreement. Approval
+and durable request replay are one SQLite transaction, including companion
+creation. Duplicate retries cannot approve a second time or create two articles.
+The regular publisher checks media bytes, commercial data and spacing before
+actual delivery. Social posts enter Postiz's calendar; companion articles publish
+as soon as ready. Owner session APIs and connector administration remain separate.
+
+This is a trusted confirmation relay: the server verifies version/preview and
+records the agent's confirmation assertion, but cannot independently verify that
+the human spoke those words or saw the image in Grok. The connector's bearer key
+therefore now carries the explicitly requested approval capability. The Bot's
+instructions prohibit inventing consent or treating a creation brief as approval.

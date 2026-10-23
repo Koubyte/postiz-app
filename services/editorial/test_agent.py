@@ -89,7 +89,7 @@ def test_conversation_blog_proposal_creates_blog_not_social(service,monkeypatch)
     identifier=chat.accept(cid,mid,{'index':0},'owner')
     assert service.store.item(identifier)['kind']=='blog'
 
-def test_mcp_transport_auth_and_no_publication_tools(service,monkeypatch):
+def test_mcp_transport_auth_and_scoped_owner_approval(service,monkeypatch):
     from fastapi.testclient import TestClient
     monkeypatch.setenv('EDITORIAL_DATA',str(service.store.root));monkeypatch.setenv('EDITORIAL_WORKER','false')
     spec=importlib.util.spec_from_file_location('agent_http_test',Path(__file__).with_name('app.py'))
@@ -104,7 +104,7 @@ def test_mcp_transport_auth_and_no_publication_tools(service,monkeypatch):
         assert init.status_code==200 and 'result' in init.json()
         result=rpc('tools/list').json()['result']
         names={tool['name'] for tool in result['tools']}
-        assert names=={'get_editorial_context','get_content','get_visual','prepare_content','revise_content','prepare_week'}
+        assert names=={'get_editorial_context','get_content','get_visual','prepare_content','revise_content','prepare_week','schedule_content','approve_content'}
         response=rpc('tools/call',{'name':'approve_item','arguments':{}}).json()
         assert response['result']['isError'] is True
         response=rpc('tools/call',{'name':'get_editorial_context','arguments':{}}).json()

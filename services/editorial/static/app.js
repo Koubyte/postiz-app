@@ -1194,7 +1194,7 @@ function openItem(item) {
       ),
     );
   const linkedArticle = item.companion_article;
-  const createBlog = el('input', { type: 'checkbox', checked: linkedArticle?.state === 'active', disabled: item.status !== 'review' || linkedArticle?.status === 'published' });
+  const createBlog = el('input', { type: 'checkbox', checked: linkedArticle ? linkedArticle.state === 'active' : item.blog_requested === true, disabled: item.status !== 'review' || linkedArticle?.status === 'published' });
   if (item.kind === 'social') {
     if (linkedArticle) fields.append(el('section', { class: 'sources' },
       el('h3', {}, 'Article associé'),
@@ -1203,7 +1203,7 @@ function openItem(item) {
       el('a', { href: `/editorial/?conversation=${encodeURIComponent(linkedArticle.conversation_id)}&item=${encodeURIComponent(linkedArticle.article_id)}#discussion` }, 'Ouvrir l’article')));
     if (linkedArticle?.status !== 'published') fields.append(el('section', { class: 'sources' },
       el('label', { class: 'review-check' }, createBlog, 'Créer aussi un article de blog'),
-      el('p', { class: 'hint' }, 'En validant ce post avec cette case cochée, j’autorise la rédaction et la publication de l’article associé sur planetelaser.fr, sans deuxième validation. Publication à la date du post, ou dès que l’article est prêt si cette date est dépassée.')));
+      el('p', { class: 'hint' }, 'En validant ce post avec cette case cochée, j’autorise la rédaction et la publication de l’article associé sur planetelaser.fr, sans deuxième validation. L’article sera publié dès qu’il sera rédigé et illustré, même si le post est programmé plus tard.')));
   }
   if (item.derived_from_post) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
   const reviewCheck = el('input', { type: 'checkbox', disabled: true });

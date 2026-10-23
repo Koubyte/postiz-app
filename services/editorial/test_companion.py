@@ -54,19 +54,18 @@ def test_opt_in_freezes_context_and_leaves_weekly_article_untouched(store,monkey
     with store.db() as db:assert db.execute('SELECT count(*) FROM companion_articles').fetchone()[0]==1
 
 
-def test_real_draft_seals_and_publishes_once_at_due_time(store,monkeypatch):
+def test_real_draft_publishes_immediately_even_when_social_post_is_later(store,monkeypatch):
     parent,article=opt_in(store)
     runner=Companion(store,writer(store,monkeypatch,parent));runner.run(article)
     item=store.item(article)
     assert item['status']=='approved' and item['approved_by']=='owner'
     assert item['approval_hash']==store.content_hash(item)
     assert item['content']['slug'].endswith(article[:8])
-    assert item['scheduled_at']==store.item(parent)['scheduled_at']
+    assert item['scheduled_at']<store.item(parent)['scheduled_at']
     runner.run(article)
     monkeypatch.setenv('PUBLIC_URL','https://studio.example.com')
     publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
-    publisher.deliver(article);assert store.public_articles()==[]
-    make_due(monkeypatch,item);publisher.deliver(article);publisher.deliver(article)
+    publisher.deliver(article);publisher.deliver(article)
     assert len(store.public_articles())==1
     assert store.item(article)['status']=='published'
     assert store.item(parent)['status']=='approved'
@@ -125,7 +124,7 @@ def test_unchecked_reapproval_revokes_and_reopt_in_reuses_article(store,monkeypa
 def test_changed_article_requires_manual_approval(store,monkeypatch):
     parent,article=opt_in(store);runner=Companion(store,writer(store,monkeypatch,parent));runner.run(article)
     a=store.item(article)
-    store.save_item(article,1,{'markdown':a['content']['markdown']+'\nConseil corrigé.'},a['scheduled_at'],'owner')
+    store.save_item(article,1,{'markdown':a['content']['markdown']+'\nConseil corrigé.'},store.item(parent)['scheduled_at'],'owner')
     with pytest.raises(Conflict):runner.run(article)
     # Owner may independently approve the edited article even after parent edit.
     p=store.item(parent);store.save_item(parent,1,{'facebook':'Correction'},p['scheduled_at'],'owner')
