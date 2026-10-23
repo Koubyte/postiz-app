@@ -190,6 +190,8 @@ test('one reference photo is validated by encoding, MIME, signature and decoded 
   assert.equal(reference.sha256, createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex'));
   const webp = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
   assert.equal(prepareReferenceImage({ mime_type: 'image/webp', b64_json: webp }).extension, 'webp');
+  const jpeg = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ADoDFU3/2Q==';
+  assert.equal(prepareReferenceImage({ mime_type: 'image/jpeg', b64_json: jpeg }).extension, 'jpg');
   assert.equal(prepareReferenceImage(undefined), undefined);
   for (const value of [null, [], [{ mime_type: 'image/png', b64_json: png }], {}, { mime_type: 'image/jpeg', b64_json: png }, { mime_type: 'image/svg+xml', b64_json: png }, { mime_type: 'image/png', b64_json: 'data:image/png;base64,' + png }, { mime_type: 'image/png', b64_json: png + '\n' }, { mime_type: 'image/png', b64_json: '!!!!' }, { mime_type: 'image/png', b64_json: png, path: '/private/file' }, { mime_type: 'image/webp', b64_json: Buffer.from('RIFF----WEBPwrong').toString('base64') }]) {
     assert.throws(() => prepareImage({ prompt: 'Scene', reference_image: value }), e => e.code === 'invalid_reference_image');
