@@ -50,7 +50,7 @@ complete, coherent scene with that product. The renderer never cuts out or paste
 a product: it only crops/resizes the resulting scene and applies the approved
 logo, typography, palette and optional verified price. For a product, rendering
 requires the reference bytes and an explicit acknowledgement that the generator
-used them; missing references and supplier image restrictions block output.
+received them; missing references and supplier image restrictions block output.
 
 The private reference photograph and generated scene are retained with SHA-256
 provenance, alongside social and blog exports. Generation can change product

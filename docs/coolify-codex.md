@@ -78,7 +78,12 @@ not inherit OpenAI API keys from the app.
 - Images: new images from a prompt, returned as PNG/base64 and stored through
   Postiz's normal media handling. Native Codex controls its image model and
   dimensions; requested dimensions are aspect-ratio guidance, not an exact
-  pixel-size guarantee. Image editing is not exposed by this adapter yet.
+  pixel-size guarantee. The private image endpoint also accepts one product reference
+  as `reference_image: {mime_type, b64_json}` (PNG/JPEG/WebP, up to 8 MiB).
+  It attaches a temporary private `localImage` to app-server and instructs the
+  native image tool to create a scene using that reference. A returned
+  `reference_image_sha256` acknowledges the submitted bytes, not visual fidelity.
+  The editorial studio uses this path; the normal Postiz prompt-only UI is unchanged.
 - Voice, transcription and video generation retain their existing providers;
   configuring Codex does not replace ElevenLabs, Deepgram, FAL or RunPod.
 - Image inputs to the text endpoint are rejected explicitly.
