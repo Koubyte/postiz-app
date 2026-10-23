@@ -466,3 +466,48 @@ def test_save_plan_date_outside_week_preserves_briefs_and_requires_approval(stor
         assert client.post('/editorial/api/weeks/'+week+'/save',headers=headers,json={'revision':2,'plan':edited}).status_code==200
         response=client.post('/editorial/api/weeks/'+week+'/approve',headers=headers,json={'revision':3})
         assert response.status_code==409 and 'date passée' in response.json()['error']
+
+
+def test_approved_future_social_enters_calendar_once_at_exact_date(store,monkeypatch):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    calls=fake_api(monkeypatch,publisher)
+    publisher.deliver(id);publisher.deliver(id)
+    posts=[c[2]['json'] for c in calls if c[0]=='POST' and c[1]=='/posts']
+    assert len(posts)==2
+    assert all(p['type']=='schedule' and p['date']==store.item(id)['scheduled_at'] for p in posts)
+    assert {p['posts'][0]['settings']['__type'] for p in posts}=={'facebook','instagram'}
+    assert store.item(id)['status']=='scheduled'
+
+
+def test_future_blog_stays_private_after_approval(store,monkeypatch):
+    id=create_item(store,'blog');store.approve_item(id,1,'owner',True)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    calls=fake_api(monkeypatch,publisher);publisher.deliver(id)
+    assert store.item(id)['status']=='approved' and store.public_articles()==[] and calls==[]
+
+
+def test_reconcile_real_postiz_ids_and_future_calendar_window(store,monkeypatch):
+    id=create_item(store);store.approve_item(id,1,'owner',True)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    calls=fake_api(monkeypatch,publisher);fake=publisher.api
+    def real_shape(method,path,**kwargs):
+        result=fake(method,path,**kwargs)
+        return [{'postId':entry['id'],'integration':'channel'} for entry in result] if path=='/posts' else result
+    monkeypatch.setattr(publisher,'api',real_shape);publisher.deliver(id)
+    with store.db() as db:
+        ids=[json.loads(r[0])[0]['postId'] for r in db.execute('SELECT result FROM deliveries')]
+    def calendar(method,path,**kwargs):
+        assert method=='GET' and path=='/posts'
+        assert datetime.fromisoformat(kwargs['params']['endDate'])>datetime.fromisoformat(store.item(id)['scheduled_at'])
+        return {'posts':[{'id':post,'state':'PUBLISHED'} for post in ids]}
+    monkeypatch.setattr(publisher,'api',calendar);publisher.reconcile()
+    assert store.item(id)['status']=='published'
+
+
+@pytest.mark.parametrize('status',['review','rejected','failed'])
+def test_unapproved_future_content_never_enters_postiz(store,monkeypatch,status):
+    id=create_item(store,status=status)
+    publisher=Publisher(store,SimpleNamespace(products=lambda **kw:[]))
+    calls=fake_api(monkeypatch,publisher);publisher.deliver(id)
+    assert calls==[] and store.item(id)['status']==status

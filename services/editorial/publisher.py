@@ -30,7 +30,9 @@ class Publisher:
         item=self.store.item(id)
         if item['status']!='approved':return
         due=datetime.fromisoformat(item['scheduled_at'])
-        if due>datetime.now(timezone.utc):return
+        # Social posts enter Postiz's calendar as soon as the owner approves.
+        # The blog remains private until its due time.
+        if item['kind']=='blog' and due>datetime.now(timezone.utc):return
         if due<datetime.now(timezone.utc)-timedelta(minutes=30):raise Conflict('Créneau dépassé de plus de trente minutes. Choisissez une nouvelle date et validez à nouveau.')
         self.check(item)
         with self.store.db() as db:
@@ -61,9 +63,12 @@ class Publisher:
                 if db.execute('SELECT 1 FROM deliveries WHERE item_id=? AND revision=? AND channel=?',(id,item['revision'],channel)).fetchone():continue
                 if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=='true':raise Conflict('Publication suspendue. Vérifiez les livraisons déjà engagées avant reprise.')
                 db.execute("INSERT INTO deliveries VALUES(?,?,?,?,'sending','{}',?)",(delivery_id,id,item['revision'],channel,now()))
-            payload={'type':'now','shortLink':False,'date':now(),'tags':[],'posts':[{'integration':{'id':channels[channel]},'value':[{'content':item['content'][channel],'image':[{'id':media['id'],'path':media['path'],'alt':item['content'].get('alt','')}]}],'settings':{'__type':channel,'post_type':'post'}}]}
+            payload={'type':'schedule' if due>datetime.now(timezone.utc) else 'now','shortLink':False,'date':item['scheduled_at'],'tags':[],'posts':[{'integration':{'id':channels[channel]},'value':[{'content':item['content'][channel],'image':[{'id':media['id'],'path':media['path'],'alt':item['content'].get('alt','')}]}],'settings':{'__type':channel,'post_type':'post'}}]}
             try:
                 result=self.api('POST','/posts',json=payload)
+                entries=result if isinstance(result,list) else [result]
+                if not entries or any(not isinstance(entry,dict) or not (entry.get('postId') or entry.get('id')) for entry in entries):
+                    raise Conflict('Postiz n’a pas confirmé les identifiants des publications.')
             except Exception:
                 # POST has no guaranteed idempotency key: an ambiguous result is NEVER retried.
                 with self.store.db() as db:
@@ -71,19 +76,19 @@ class Publisher:
                 raise Conflict('Résultat d’envoi incertain pour '+channel+'. Vérifiez Postiz avant toute nouvelle tentative.')
             with self.store.db() as db:db.execute("UPDATE deliveries SET status='submitted',result=?,updated=? WHERE id=?",(dumps(result),now(),delivery_id))
         with self.store.db() as db:
-            db.execute("UPDATE items SET status='scheduled' WHERE id=?",(id,));self.store.event(db,'Contenu approuvé transmis à Postiz ; confirmation des réseaux en attente.')
+            db.execute("UPDATE items SET status='scheduled' WHERE id=?",(id,));self.store.event(db,'Contenu approuvé programmé dans le calendrier Postiz à la date validée.')
     def reconcile(self):
         with self.store.db() as db:
             rows=[dict(r) for r in db.execute("SELECT * FROM deliveries WHERE status='submitted'")]
         if not rows:return
         dates=[self.store.item(r['item_id'])['scheduled_at'] for r in rows]
         start=(datetime.fromisoformat(min(dates))-timedelta(days=2)).isoformat()
-        end=(datetime.now(timezone.utc)+timedelta(days=2)).isoformat()
+        end=(max(datetime.now(timezone.utc),max(datetime.fromisoformat(d) for d in dates))+timedelta(days=2)).isoformat()
         data=self.api('GET','/posts',params={'startDate':start,'endDate':end})
         posts={p['id']:p for p in data.get('posts',[])}
         for row in rows:
             result=json.loads(row['result']);result=result if isinstance(result,list) else [result]
-            ids=[x.get('id') for x in result if isinstance(x,dict)]
+            ids=[x.get('postId') or x.get('id') for x in result if isinstance(x,dict)]
             states=[posts.get(id,{}).get('state') for id in ids]
             status='published' if states and all(s=='PUBLISHED' for s in states) else 'failed' if 'ERROR' in states else 'submitted'
             with self.store.db() as db:

@@ -17,7 +17,7 @@ const labels = {
   rendering: 'Création du visuel',
   generating: 'En préparation',
   review: 'À relire',
-  approved: 'Approuvé',
+  approved: 'Approuvé · transfert en attente',
   published: 'Publié',
   blocked: 'À vérifier',
   failed: 'Erreur',
@@ -218,7 +218,7 @@ async function refresh(force = false) {
     }
     if (data.paused)
       message(
-        'Studio suspendu : aucune nouvelle préparation ni publication n’est lancée. Les brouillons restent disponibles.',
+        'Studio suspendu : les nouvelles préparations et les transferts vers Postiz sont arrêtés. Les posts déjà programmés dans Postiz restent actifs ; gérez-les dans son calendrier.',
       );
     else if (!state.dirty) message('');
     $('error').hidden = true;
@@ -805,6 +805,7 @@ function itemCard(item) {
         'p',
         { class: 'card-excerpt' },
         item.error ||
+          (item.status === 'scheduled' ? 'Programmé dans le calendrier Postiz pour Facebook et Instagram. Gérez les changements de date ou l’annulation dans Postiz.' : '') ||
           c.excerpt ||
           c.facebook ||
           'Le studio prépare ce contenu.',

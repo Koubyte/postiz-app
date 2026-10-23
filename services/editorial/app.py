@@ -60,7 +60,7 @@ def schedule():
         if store.paused():continue
         local=datetime.now(timezone.utc).astimezone(PARIS)
         if local.weekday()>4 or (local.weekday()==4 and local.hour>=9):store.prepare()
-        with store.db() as db:due=[r[0] for r in db.execute("SELECT id FROM items WHERE status='approved' AND scheduled_at<=?",(now(),))]
+        with store.db() as db:due=[r[0] for r in db.execute("SELECT id FROM items WHERE status='approved' AND (kind='social' OR scheduled_at<=?) ORDER BY scheduled_at",(now(),))]
         for id in due:
             try:publisher.deliver(id)
             except Exception as exc:

@@ -92,3 +92,10 @@ Manual scheduling is independent of the plan week: the daily Monday–Sunday
 spread is a default only. Social posts and the blog can be moved to any explicit
 date, including the same day or before the batch week, in Europe/Paris. Saving
 a date does not approve or generate content; past dates still block approval.
+
+Approved social revisions are transferred immediately to Postiz with type=schedule
+and the exact approved date. Only due/late-within-30-minutes posts use type=now.
+Unapproved, rejected and failed revisions never enter the calendar. Blog projection
+remains due-time gated. Reconciliation accepts Postiz's postId response and covers
+future scheduled dates. Studio pause stops new transfers; existing Postiz schedules
+must be changed/cancelled in Postiz.
