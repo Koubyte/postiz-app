@@ -18,7 +18,7 @@ class Publisher:
         if not item['approval_hash'] or item['approval_hash']!=self.store.content_hash(item):raise Conflict('La version ne correspond plus à celle approuvée.')
         with self.store.db() as db:
             demand=db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(item['id'],)).fetchone()
-        if demand:
+        if demand and item['kind']=='social':
             from spacing import calendar_times,reservations,available_slot
             occupied=calendar_times(self)
             with self.store.db() as db:

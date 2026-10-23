@@ -28,6 +28,7 @@ function chatMode() {
 async function loadDiscussions() {
   const result=await api('/conversations');
   const current=chat.id;
+  if(!chat.linkLoaded){const id=new URLSearchParams(location.search).get('conversation');if(result.conversations.some(c=>c.id===id))chat.id=id;chat.linkLoaded=true;}
   $('chat-history').replaceChildren(...result.conversations.map(c=>el('option',{value:c.id},c.title)));
   if(!chat.id) chat.id=result.conversations[0]?.id || null;
   $('chat-history').value=chat.id || '';
@@ -54,7 +55,7 @@ function proposalCard(msg,p,index) {
   if(photos.length)options.append(el('div',{class:'chat-attachments'},...photos.map(photo=>el('img',{src:photo.url,alt:photo.name,class:'proposal-photo'}))));
   const updateSummary=()=>{summary.textContent=dateLabel(parisIso(when.input.value))+' · '+(price.input.value?`${price.input.value} €`:'Sans prix');};
   when.input.addEventListener('change',()=>{try{updateSummary();}catch{}});price.input.addEventListener('input',()=>{try{updateSummary();}catch{}});
-  const prepare=el('button',{type:'button',class:'button primary'},msg.target?'Préparer la correction':'Créer le post et son visuel');
+  const prepare=el('button',{type:'button',class:'button primary'},msg.target?'Préparer la correction':p.format==='blog'?'Créer l’article et ses images':'Créer le post et son visuel');
   prepare.onclick=async()=>{
     if(!when.input.checkValidity()||!price.input.checkValidity()){options.open=true;when.input.reportValidity();price.input.reportValidity();return;}
     prepare.disabled=true;chatError();
@@ -67,8 +68,8 @@ function proposalCard(msg,p,index) {
 }
 function resultCard(item,n) {
   const card=el('article',{class:'chat-result','data-item-id':item.id});
-  if(item.media_url)card.append(el('img',{src:item.media_url,alt:item.content.alt||item.content.title||'Visuel du post',loading:'lazy'}));
-  card.append(el('h4',{},item.content.title||`Post ${n+1} · préparation`),el('p',{class:'chat-result-channels'},'Facebook · Instagram'),el('p',{class:'chat-result-date'},chatIcon('calendar-blank'),dateLabel(item.scheduled_at)));
+  if(item.media_url||item.blog_media_url)card.append(el('img',{src:item.kind==='blog'?item.blog_media_url:item.media_url,alt:item.content.alt||item.content.title||'Visuel du post',loading:'lazy'}));
+  card.append(el('h4',{},item.content.title||`Post ${n+1} · préparation`),el('p',{class:'chat-result-channels'},item.kind==='blog'?'Article de blog':'Facebook · Instagram'),el('p',{class:'chat-result-date'},chatIcon('calendar-blank'),dateLabel(item.scheduled_at)));
   if(item.status!=='review')card.append(badge(item.status));
   if(item.error)card.append(el('p',{class:'notice error'},item.error));
   card.append(el('button',{class:'button chat-review',type:'button',onclick:()=>openItem(item)},item.status==='review'?'Voir et valider':'Voir le contenu'));
@@ -129,6 +130,8 @@ async function refreshChat() {
     }
     else chat.data={messages:[],photos:[],items:[]};
     renderChat();
+    const linked=new URLSearchParams(location.search).get('item');
+    if(linked&&!chat.itemLinkOpened){const item=chat.data.items.find(i=>i.id===linked);if(item){chat.itemLinkOpened=true;openItem(item);}}
     if(chat.fetchError)chatError();
   } catch(e){chatError(e.message,true);}finally{chat.loading=false;}
 }

@@ -15,6 +15,7 @@ from generation import Generator, GenerationError, validate_plan, validate_conte
 from publisher import Publisher
 from media import MediaBlocked
 from conversation import Conversation
+from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
 from spacing import calendar_times as read_calendar, reservations, available_slot
 
 ROOT=Path(__file__).parent
@@ -25,6 +26,10 @@ conversation=Conversation(store,generator)
 stop=threading.Event()
 
 def calendar_times(exclude_ids=()):return read_calendar(publisher,exclude_ids)
+
+agent_service=AgentService(store,calendar_times)
+agent_mcp=build_mcp(agent_service)
+agent_asgi=BearerGate(agent_mcp.streamable_http_app(),agent_service)
 
 def safe_error(exc):
     return str(exc)[:500] if isinstance(exc,(Conflict,GenerationError,MediaBlocked)) else 'Une étape a échoué. Aucun nouvel envoi ne sera effectué sans vérification.'
@@ -90,10 +95,12 @@ async def lifespan(app):
         for target in (work,schedule):
             t=threading.Thread(target=target,daemon=True);t.start();threads.append(t)
         t=threading.Thread(target=work,args=(True,),daemon=True);t.start();threads.append(t)
-    yield
-    stop.set()
+    async with agent_mcp.session_manager.run():
+        try:yield
+        finally:stop.set()
 
 app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
+app.mount('/editorial/agent',agent_asgi)
 app.mount('/editorial/static',StaticFiles(directory=ROOT/'static'),name='static')
 
 @app.middleware('http')
@@ -264,7 +271,7 @@ async def item_action(id:str,request:Request):
         item=store.item(id);editable_content(item['content'],item)
         with store.db() as db:
             demand=db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(id,)).fetchone()
-        if demand:
+        if demand and item['kind']=='social':
             occupied=await asyncio.to_thread(calendar_times)
             with store.db() as db:
                 proposed=available_slot(item['scheduled_at'],occupied+reservations(db,id))
@@ -397,3 +404,19 @@ async def transcribe(request:Request):
         except requests.RequestException:raise Conflict('La transcription a pris trop de temps. Réessayez avec un message plus court.')
         except ValueError:raise Conflict('Réponse de transcription invalide.')
     return await asyncio.to_thread(invoke)
+
+
+@app.get('/editorial/connect')
+def connect_page():return FileResponse(ROOT/'static'/'connect.html')
+
+@app.get('/editorial/api/agent-connection')
+async def agent_connection(request:Request):
+    await actor(request)
+    return {**agent_service.token_status(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':INSTRUCTIONS}
+
+@app.post('/editorial/api/agent-connection')
+async def change_agent_connection(request:Request):
+    who=await actor(request);data=await body(request)
+    if data.get('action')=='rotate':return {'token':agent_service.rotate(who)}
+    if data.get('action')=='revoke':agent_service.revoke(who);return {'ok':True}
+    raise Conflict('Action inconnue.')

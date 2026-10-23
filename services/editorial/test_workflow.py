@@ -158,6 +158,7 @@ def test_blog_public_projection_only_after_approved_due_publication(store,monkey
 
 
 def test_public_http_endpoints_do_not_expose_drafts(store,monkeypatch):
+    monkeypatch.setenv('PUBLIC_URL','https://postiz.example.com')
     from fastapi.testclient import TestClient
     monkeypatch.setenv('EDITORIAL_DATA',str(store.root))
     monkeypatch.setenv('EDITORIAL_WORKER','false')

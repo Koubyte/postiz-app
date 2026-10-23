@@ -222,6 +222,11 @@ async function refresh(force = false) {
       );
     else if (!state.dirty) message('');
     $('error').hidden = true;
+    const linked = new URLSearchParams(location.search).get('item');
+    if (linked && !new URLSearchParams(location.search).has('conversation') && !state.itemLinkOpened) {
+      const item = data.weeks.flatMap(w => w.items || []).find(i => i.id === linked);
+      if (item) { state.itemLinkOpened = true; openItem(item); }
+    }
   } catch (e) {
     message(e.message, true);
   } finally {

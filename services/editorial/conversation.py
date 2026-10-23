@@ -82,11 +82,11 @@ class Conversation:
             photos=[dict(r) for r in db.execute('SELECT id,name FROM chat_photos WHERE conversation_id=?',(msg['conversation_id'],))]
             target=self.store.item(msg['target'],db) if msg['target'] else None
             if target:
-                target={'id':target['id'],'content':target['content'],'scheduled_at':target['scheduled_at'],'brief':json.loads(db.execute('SELECT brief FROM demand_items WHERE item_id=?',(target['id'],)).fetchone()[0])}
-        prompt='''Vous dialoguez avec le propriétaire de Planète Laser pour préparer des posts PONCTUELS Facebook + Instagram. Le planning hebdomadaire est hors périmètre. Parlez naturellement et brièvement. Répondez à ses questions, cherchez les produits sur Internet si nécessaire, et ne redemandez pas les informations déjà fournies. Ne lancez ni publication ni programmation. Les propositions sont des briefs : le propriétaire cliquera sur « Préparer » pour créer textes et visuels, puis validera séparément la version finale. N’affirmez pas avoir créé les visuels avant ce clic.
+                target={'id':target['id'],'format':target['kind'],'content':target['content'],'scheduled_at':target['scheduled_at'],'brief':json.loads(db.execute('SELECT brief FROM demand_items WHERE item_id=?',(target['id'],)).fetchone()[0])}
+        prompt='''Vous dialoguez avec le propriétaire de Planète Laser pour préparer des posts PONCTUELS Facebook + Instagram ou des articles de blog PONCTUELS si demandés. Le planning hebdomadaire est hors périmètre. Parlez naturellement et brièvement. Répondez à ses questions, cherchez les produits sur Internet si nécessaire, et ne redemandez pas les informations déjà fournies. Ne lancez ni publication ni programmation. Les propositions sont des briefs : le propriétaire cliquera sur « Préparer » pour créer textes et visuels, puis validera séparément la version finale. N’affirmez pas avoir créé les visuels avant ce clic.
 Si le brief suffit, proposez 1 à 5 posts, chacun avec produit exact (nom ou EAN ou URL), angle et décor cohérent avec notre charte. Sinon posez UNE question utile et proposals=[]. Un prix n’est jamais obligatoire. N’inventez ni prix, ni nouvelle arrivée, ni disponibilité. Les photos jointes sont des références fournies par le propriétaire pour la génération d’images ; vous avez ici leurs noms, PAS leurs pixels : ne prétendez pas les avoir vues. Associez les identifiants de photos uniquement aux produits explicitement décrits par le propriétaire. S’il manque cette correspondance, demandez-la. Sans photo fournie, la recherche récupérera une référence fabricant.
 Pour une correction, si CIBLE est renseignée, proposez EXACTEMENT un brief complet remplaçant cette cible, en gardant son produit, ses photos, sa date et son prix sauf demande contraire. Une demande de correction sans cible doit demander de choisir le post, pas créer des doublons. Aucun autre post ne sera changé.
-Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","query":str,"angle":str,"scene":str,"scheduled_at":str|null,"photo_ids":[str],"price":number|null,"price_quote":str,"price_action":"keep|hide|set"}]}. query vide uniquement pour un conseil sans produit. scheduled_at doit avoir un fuseau explicite correspondant à Europe/Paris ; date actuelle ci-dessous. Si aucun horaire n’est donné, laissez null, l’interface proposera un horaire modifiable. Une heure déjà passée doit être signalée. price ne peut être renseigné que si price_quote recopie EXACTEMENT un extrait du propriétaire confirmant son prix TTC ; sinon null. Pour une correction, price_action=keep conserve le prix confirmé actuel, hide le masque uniquement si demandé, set utilise un nouveau prix explicitement confirmé. reply peut contenir des liens sources.
+Retournez {"reply":str,"proposals":[{"title":str,"format":"social|blog","kind":"product|advice|news","query":str,"angle":str,"scene":str,"scheduled_at":str|null,"photo_ids":[str],"price":number|null,"price_quote":str,"price_action":"keep|hide|set"}]}. format=blog uniquement pour un article de blog demandé, sinon social. Une correction conserve le format de CIBLE. query vide uniquement pour un conseil sans produit. scheduled_at doit avoir un fuseau explicite correspondant à Europe/Paris ; date actuelle ci-dessous. Si aucun horaire n’est donné, laissez null, l’interface proposera un horaire modifiable. Une heure déjà passée doit être signalée. price ne peut être renseigné que si price_quote recopie EXACTEMENT un extrait du propriétaire confirmant son prix TTC ; sinon null. Pour une correction, price_action=keep conserve le prix confirmé actuel, hide le masque uniquement si demandé, set utilise un nouveau prix explicitement confirmé. reply peut contenir des liens sources.
 '''
         value=self.generator.ask(prompt+'\nDate Paris : '+datetime.now(PARIS).isoformat()+'\nHistorique : '+dumps(history)+'\nPhotos disponibles : '+dumps(photos)+'\nCIBLE : '+dumps(target))
         reply=bounded_text(value.get('reply',''),7000)
@@ -98,6 +98,8 @@ Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","q
         evidence='\n'.join(h['text'] for h in history if h['role']=='user')
         for p in proposals:
             if not isinstance(p,dict):raise GenerationError('Brief invalide.')
+            format=target['format'] if target else p.get('format','social')
+            if format not in ('social','blog'):raise GenerationError('Format de contenu invalide.')
             kind=p.get('kind');query=bounded_text(p.get('query',''),600)
             if kind not in ('product','advice','news') or (kind=='product' and not query):raise GenerationError('Référence produit manquante dans le brief.')
             ids=p.get('photo_ids',[])
@@ -110,7 +112,7 @@ Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","q
                 elif not any(abs(float(n.replace(',','.'))-price)<0.001 for n in re.findall(r'\b\d+(?:[.,]\d{1,2})?\b',quote)):price=None
             if target and p.get('price_action','keep')=='keep':price=target['brief'].get('price')
             if p.get('price_action')=='hide':price=None
-            checked.append({'instruction':msg['body'] if target else '', 'title':bounded_text(p.get('title',''),160),'kind':kind,'query':query,'angle':bounded_text(p.get('angle',''),2000),'scene':bounded_text(p.get('scene','Décor musical chaleureux et réaliste'),800),'scheduled_at':due,'photo_ids':ids,'price':price})
+            checked.append({'format':format,'instruction':msg['body'] if target else '', 'title':bounded_text(p.get('title',''),160),'kind':kind,'query':query,'angle':bounded_text(p.get('angle',''),2000),'scene':bounded_text(p.get('scene','Décor musical chaleureux et réaliste'),800),'scheduled_at':due,'photo_ids':ids,'price':price})
         with self.store.db() as db:
             current=db.execute('SELECT status FROM messages WHERE id=?',(message_id,)).fetchone()
             if current['status']=='done':return
@@ -134,7 +136,9 @@ Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","q
             brief=proposals[index]
             from spacing import reservations,available_slot
             requested=checked_date(data.get('scheduled_at',brief['scheduled_at']))
-            brief['scheduled_at']=available_slot(requested,list(occupied)+reservations(db,msg['target']))
+            format=brief.get('format','social')
+            if msg['target']:format=self.store.item(msg['target'],db)['kind']
+            brief['scheduled_at']=available_slot(requested,list(occupied)+reservations(db,msg['target'])) if format=='social' else requested
             brief['requested_at']=requested
             price=data.get('price',brief.get('price'))
             if price is not None and (type(price) not in (int,float) or not 0<price<100000):raise Conflict('Indiquez un prix TTC positif ou laissez le champ vide.')
@@ -148,11 +152,11 @@ Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","q
                 db.execute('DELETE FROM jobs WHERE target=?',(item_id,))
             else:
                 item_id=uid();slot=db.execute('SELECT count(*) FROM demand_items WHERE conversation_id=?',(identifier,)).fetchone()[0]
-                db.execute("INSERT INTO items(id,week_id,kind,slot,scheduled_at) VALUES(?,?,'social',?,?)",(item_id,'demand:'+identifier,slot,brief['scheduled_at']))
+                db.execute("INSERT INTO items(id,week_id,kind,slot,scheduled_at) VALUES(?,?,?,?,?)",(item_id,'demand:'+identifier,format,slot,brief['scheduled_at']))
                 db.execute('INSERT INTO demand_items VALUES(?,?,?,?,?,NULL)',(item_id,identifier,message_id,index,dumps(brief)))
             self.store.job(db,'demand',item_id)
             db.execute('INSERT INTO settings VALUES(?,?)',('accepted:'+message_id+':'+str(index),item_id))
-            self.store.event(db,'Préparation d’un post à la demande. La version finale reste à valider.',actor)
+            self.store.event(db,'Préparation d’un contenu à la demande. La version finale reste à valider.',actor)
         return item_id
 
     def draft(self,item_id):
@@ -172,6 +176,17 @@ Retournez {"reply":str,"proposals":[{"title":str,"kind":"product|advice|news","q
                 photos=[dict(db.execute('SELECT * FROM chat_photos WHERE id=? AND conversation_id=?',(id,row['conversation_id'])).fetchone()) for id in brief['photo_ids']]
             refs=[{'photo_id':p['id'],'url':'/editorial/media/'+p['filename'],'label':p['name']} for p in photos]
             product={**product,'thumbnail':refs[0]['url'],'reference_images':refs,'image_mask_required':False,'image_scope':'requested_variants','variant_uncertainty':'','media_note':'Photos fournies par le propriétaire ; fidélité et droits à vérifier.'}
+        reference=brief.get('suggested_reference')
+        if reference and product and not brief['photo_ids']:
+            if product.get('image_mask_required'):raise GenerationError('Cette référence produit impose une restriction photo.')
+            from net import public_bytes
+            from media import _decode
+            _decode(public_bytes(reference['url'],8*1024*1024))
+            # Agent-provided research is kept as provenance; the owner still checks
+            # fidelity and rights in the same required visual approval screen.
+            product={**product,'thumbnail':reference['url'],'reference_images':[{**reference,'label':product['title']}],'image_scope':'requested_variants','media_note':'Référence proposée par Grok Bot, fidélité et droits à vérifier avant validation.'}
+            variants=product.get('requested_variants') or []
+            if variants and all(v.get('confirmed') is True for v in variants):product['variant_uncertainty']=''
         brief['product_id']=product['id'] if product else None
         with self.store.db() as db:
             db.execute('UPDATE demand_items SET brief=?,product=? WHERE item_id=?',(dumps(brief),dumps(product) if product else None,item_id))

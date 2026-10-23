@@ -147,3 +147,48 @@ not the text-only inference bridge. It must ask for a product name when unspecif
 Validation: `python -m pytest services/editorial/test_conversation.py
 services/editorial/test_workflow.py services/editorial/test_media.py` plus browser
 checks and a server transcription fixture. No live smoke test approves a post.
+
+## Grok Bot community-manager connector
+
+`/editorial/connect` is the owner-only setup workflow (the shell is public; all
+configuration and key operations require the existing Postiz owner session and
+CSRF protection). Add its Remote HTTPS MCP URL to Grok Bot with an Authorization
+header. The owner generates a random 288-bit token, shown once; only its SHA-256
+hash is persisted. Rotation/revocation takes effect on the next HTTP request.
+The setup page provides the complete French bot instructions and last-use status.
+Do not paste the token into chat, source files, URLs or logs.
+
+The MCP SDK serves stateless Streamable HTTP at `/editorial/agent/mcp`, behind a
+separate bearer gate. It exposes exactly six preparation/read tools:
+`get_editorial_context`, `get_content`, `get_visual`, `prepare_content`,
+`revise_content`, and `prepare_week`. It has no approval, publication, arbitrary
+HTTP, shell, filesystem or administrative tool. Its token cannot authenticate
+any owner API. Origins, hosts, body sizes and queued-work limits are checked.
+
+`prepare_content` queues one social subject (both Facebook and Instagram) or
+one illustrated blog article through the existing Codex pipeline. A product
+query triggers catalogue/manufacturer research; Grok can supply a real reference
+image URL and source page from its own research. Images still use the bounded,
+SSRF-safe fetcher, decoding checks and mandatory owner visual review. No source
+restriction is bypassed. Posts respect the 120-minute calendar spacing; blog
+articles use their own requested time and never require social calendar access.
+Brouillons remain private and the existing site feed only exposes approved,
+published articles. The discussion UI also accepts blog proposals and opens
+specific review cards via the connector's `review_url`.
+
+Every creation/correction requires a unique request_id. Durable payload hashes
+prevent duplicate work after retries and reject reuse with changed arguments.
+Corrections require the current revision and an unapproved, undelivered item;
+only that draft is changed. A correction preserves its product and date. New
+product/date requests should be submitted as a new brief or changed by the owner.
+The existing Friday weekly scheduler remains the single schedule authority:
+prepare_week returns the existing next week if present, avoiding duplicate
+weekly content. Weekly plan approval and each final-content approval remain
+human actions. Grok's voice interface is used for spoken briefs; no Grok login or
+subscription token is copied onto Coolify.
+
+Validation includes the MCP initialize/list/call HTTP exchange, bearer rejection,
+revocation, forbidden approval access, durable replay, spacing, isolated revisions,
+and blog creation through the existing review path (`test_agent.py`). A successful
+server test is not a completed connection to the user's Grok Bot account: the
+owner must add the secret header in Grok Bot and call get_editorial_context.
