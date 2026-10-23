@@ -210,7 +210,9 @@ async function refresh(force = false) {
       force ||
       (!state.dirty &&
         !$('item-dialog').open &&
-        !$('workspace').contains(document.activeElement))
+        !document.activeElement?.matches(
+          '#workspace input, #workspace textarea, .plan-panel select',
+        ))
     ) {
       render();
     }
