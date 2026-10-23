@@ -160,7 +160,7 @@ async def state(request:Request):
             week=dict(row);week['plan']=json.loads(week['plan']);week['items']=[]
             for ir in db.execute('SELECT id FROM items WHERE week_id=? ORDER BY kind DESC,slot',(week['id'],)):
                 item=store.item(ir[0],db)
-                for key,field in [('media','media_url'),('blog_media','blog_media_url'),('source_media','source_media_url'),('mask_media','mask_media_url')]:
+                for key,field in [('media','media_url'),('blog_media','blog_media_url'),('source_media','source_media_url'),('source_media_2','source_media_2_url'),('source_media_3','source_media_3_url'),('mask_media','mask_media_url')]:
                     item[field]='/editorial/media/'+item['media'][key] if item['media'].get(key) else None
                 item['deliveries']=[{**dict(r),'result':json.loads(r['result'])} for r in db.execute('SELECT * FROM deliveries WHERE item_id=?',(item['id'],))]
                 week['items'].append(item)

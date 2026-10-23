@@ -17,7 +17,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageStat
 ASSETS = Path(__file__).with_name('media-assets')
 BRAND_VERSION = 'pl-social-v1'
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
-Image.MAX_IMAGE_PIXELS = 24_000_000
+MAX_IMAGE_PIXELS = 40_000_000
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 class MediaBlocked(ValueError):
@@ -29,7 +30,7 @@ def _decode(data: bytes) -> Image.Image:
         raise MediaBlocked('Image absente ou trop volumineuse.')
     try:
         with Image.open(io.BytesIO(data)) as opened:
-            if opened.width * opened.height > 24_000_000 or min(opened.size) < 80:
+            if opened.width * opened.height > MAX_IMAGE_PIXELS or min(opened.size) < 80:
                 raise MediaBlocked('Dimensions de la photo source non exploitables.')
             opened.load()
             return ImageOps.exif_transpose(opened).convert('RGBA')
@@ -75,10 +76,12 @@ def _scene(scene: Image.Image, size: tuple[int,int]) -> Image.Image:
     return ImageOps.fit(scene.convert('RGB'), size, method=Image.Resampling.LANCZOS).convert('RGBA')
 
 
-def render_assets(*, item_id: str, product: dict | None, background: bytes, content: dict, output_dir: Path, product_reference: bytes | None = None, reference_used: bool = False) -> dict:
+def render_assets(*, item_id: str, product: dict | None, background: bytes, content: dict, output_dir: Path, product_reference: bytes | None = None, reference_used: bool = False, product_references: list[bytes] | None = None) -> dict:
     """Render one social master and blog cover plus immutable review evidence.
 
-    Requires explicit evidence that product_reference was used for generation.
+    Requires explicit evidence that all supplied references were used for generation.
+    product_references accepts one to three images and takes precedence over the
+    legacy product_reference argument; if both are present their first image must match.
     `background` is the complete generated scene, including the product.
     The caller supplies the same reference bytes it sent to the image generator.
     `price_text` is already verified by the caller; omission hides price entirely.
@@ -93,17 +96,30 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
         raise MediaBlocked('Le décor est blanc ou vide ; générer une vraie scène musicale.')
     if str(content.get('kind','')).lower() in ('store','magasin','team','équipe') and not content.get('real_scene_source'):
         raise MediaBlocked('Une publication magasin exige une photographie réelle documentée.')
-    source = None
-    source_bytes = None
+    sources = []
+    reference_bytes = []
+    source_urls = []
+    reference_labels = []
     source_url = None
     if product:
         if product.get('image_mask_required') not in (None, False, 0, '', 'false'):
             raise MediaBlocked('Image fournisseur protégée : utiliser une autre photo autorisée.')
-        if reference_used is not True or not isinstance(product_reference, bytes) or not product_reference:
-            raise MediaBlocked('La photo du produit exact doit être fournie au générateur avant la mise en scène.')
-        source_bytes = product_reference
-        source = _decode(source_bytes)
-        source_url = product.get('reference_url') or product.get('thumbnail') or product.get('image_url')
+        reference_bytes = product_references if product_references is not None else [product_reference]
+        if (reference_used is not True or not isinstance(reference_bytes, list)
+                or not 1 <= len(reference_bytes) <= 3
+                or any(not isinstance(data, bytes) or not data for data in reference_bytes)):
+            raise MediaBlocked('Une à trois photos du produit exact doivent être fournies au générateur avant la mise en scène.')
+        if product_references is not None and product_reference is not None and product_reference != reference_bytes[0]:
+            raise MediaBlocked('Les références du produit sont incohérentes.')
+        sources = [_decode(data) for data in reference_bytes]
+        reference_metadata = product.get('reference_images')
+        if not isinstance(reference_metadata, list):reference_metadata = []
+        fallback_url = product.get('reference_url') or product.get('thumbnail') or product.get('image_url')
+        for index in range(len(sources)):
+            metadata = reference_metadata[index] if index < len(reference_metadata) and isinstance(reference_metadata[index], dict) else {}
+            source_urls.append(metadata.get('url') or (fallback_url if index == 0 else None))
+            reference_labels.append(metadata.get('label'))
+        source_url = source_urls[0]
     social = _scene(background_image,(1080,970))
     master = Image.new('RGBA',(1080,1350),'#0F0F0F')
     master.alpha_composite(social,(0,0))
@@ -140,12 +156,15 @@ def render_assets(*, item_id: str, product: dict | None, background: bytes, cont
     master.convert('RGB').save(output_dir/files['media'],optimize=True)
     blog.convert('RGB').save(output_dir/files['blog_media'],optimize=True)
     background_image.save(output_dir/files['background_media'])
-    if source is not None:
-        files['source_media'] = f'{prefix}-source.png'
-        source.save(output_dir/files['source_media'])
+    for index, source in enumerate(sources):
+        field = 'source_media' if index == 0 else f'source_media_{index+1}'
+        files[field] = f'{prefix}-source-{index+1}.png'
+        source.save(output_dir/files[field])
     provenance = {
         'brand_version':BRAND_VERSION,'item_id':item_id,'source_url':source_url,
-        'source_sha256':hashlib.sha256(source_bytes).hexdigest() if source_bytes else None,
+        'source_sha256':hashlib.sha256(reference_bytes[0]).hexdigest() if reference_bytes else None,
+        'reference_sha256':[hashlib.sha256(data).hexdigest() for data in reference_bytes],
+        'source_urls':source_urls,'reference_labels':reference_labels,
         'background_sha256':hashlib.sha256(background).hexdigest(),
         'source_product_id':product.get('id') if product else None,
         'ean':product.get('ean') if product else None,

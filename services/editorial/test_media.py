@@ -117,3 +117,56 @@ def test_render_does_not_download_or_segment(tmp_path,monkeypatch):
     result=render(tmp_path)
     assert result['provenance']['reference_used']
     assert not hasattr(media,'_cutout') and not hasattr(media,'_model_mask')
+
+
+def test_multiple_references_are_saved_and_hashed_individually(tmp_path):
+    refs=[png(source()),png(Image.new('RGB',(300,500),'ivory')),png(Image.new('RGB',(300,500),'black'))]
+    metadata=[{'url':f'https://example.com/piano-{i}.jpg','label':label} for i,label in enumerate(('Noir','Blanc','Noyer'))]
+    result=render(tmp_path,product_references=refs,product={'id':'hailun','title':'Hailun piano','reference_images':metadata})
+    assert result['provenance']['reference_sha256']==[hashlib.sha256(data).hexdigest() for data in refs]
+    assert result['provenance']['source_urls']==[m['url'] for m in metadata]
+    assert result['provenance']['reference_labels']==['Noir','Blanc','Noyer']
+    assert result['provenance']['source_sha256']==result['provenance']['reference_sha256'][0]
+    for index,data in enumerate(refs):
+        field='source_media' if index==0 else f'source_media_{index+1}'
+        assert isinstance(result[field],str)
+        path=tmp_path/result[field]
+        assert Image.open(path).convert('RGB').tobytes()==media._decode(data).convert('RGB').tobytes()
+        assert result['provenance']['files_sha256'][field]==hashlib.sha256(path.read_bytes()).hexdigest()
+    assert all(isinstance(value,str) for key,value in result.items() if key!='provenance')
+    expected=media._scene(media._decode(background()),(1600,900)).convert('RGB')
+    assert Image.open(tmp_path/result['blog_media']).tobytes()==expected.tobytes()
+
+
+@pytest.mark.parametrize('refs',[[],[b'bad'],[png(source())]*4,'not-a-list'])
+def test_reference_list_is_bounded_and_validated(tmp_path,refs):
+    with pytest.raises(media.MediaBlocked):render(tmp_path,product_reference=None,product_references=refs)
+    assert not list(tmp_path.iterdir())
+
+
+def test_conflicting_legacy_and_list_reference_blocks(tmp_path):
+    with pytest.raises(media.MediaBlocked,match='incohérentes'):
+        render(tmp_path,product_references=[png(Image.new('RGB',(300,500),'green'))])
+
+
+def test_official_hailun_photo_dimensions_are_accepted():
+    # 7008×4672 is an actual manufacturer photo size (32.7MP), within the 40MP cap.
+    stream=io.BytesIO()
+    original=Image.new('L',(7008,4672),128)
+    original.save(stream,format='JPEG');original.close()
+    decoded=media._decode(stream.getvalue())
+    assert decoded.size==(7008,4672)
+    decoded.close()
+
+
+def test_reference_over_40_megapixels_is_blocked_before_loading(monkeypatch):
+    class Oversized:
+        width=8000;height=5001
+        @property
+        def size(self):return self.width,self.height
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def load(self):pytest.fail('Oversized image must not be decoded')
+    monkeypatch.setattr(media.Image,'open',lambda *args:Oversized())
+    with pytest.raises(media.MediaBlocked,match='Dimensions'):
+        media._decode(b'image-header')

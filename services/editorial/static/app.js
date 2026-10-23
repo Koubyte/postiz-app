@@ -472,6 +472,14 @@ function renderPlan(w) {
                 : ' · Sans prix'),
         ),
       );
+    if (product?.external)
+      card.append(el('p', { class: 'hint' }, product.variant_uncertainty
+        ? 'Modèle identifié · Coloris à préciser : ' + product.variant_uncertainty
+        : product.media_status === 'needs_reference'
+          ? 'Modèle identifié · Photo à rechercher avant la création du visuel.'
+          : product.reference_images?.length
+            ? 'Références fabricant : ' + product.reference_images.map((r) => r.label).join(' · ')
+            : 'Modèle et photo de référence identifiés.'));
     title.input.addEventListener('input', () => {
       subject.title = title.input.value;
       markDirty();
@@ -1008,6 +1016,8 @@ function openItem(item) {
     ['Visuel social', item.media_url],
     ['Couverture du blog', item.blog_media_url],
     ['Photo du produit à comparer', item.source_media_url],
+    ['Deuxième référence produit', item.source_media_2_url],
+    ['Troisième référence produit', item.source_media_3_url],
   ]) {
     const url = safeUrl(value);
     if (url)

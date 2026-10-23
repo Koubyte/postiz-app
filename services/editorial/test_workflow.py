@@ -354,3 +354,70 @@ def test_reference_photo_is_sent_to_generator_and_acknowledged(store,monkeypatch
     # An older bridge silently ignoring the reference must never create a product visual.
     monkeypatch.setattr(gen,'bridge',lambda *args,**kwargs:{'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]})
     with pytest.raises(GenerationError,match='référence'):gen.render(identifier)
+
+
+def test_identity_survives_missing_photo_ean_and_variant_uncertainty(store,monkeypatch):
+    import generation
+    gen=Generator(store)
+    monkeypatch.setattr(gen,'ask',lambda _: {'matched':True,'brand':'Example','model':'HD-42','title':'Example HD-42','manufacturer_url':'https://example.com/piano','description':'Piano','identity_uncertainty':'','variant_uncertainty':'Bleu à préciser','requested_variants':[{'requested_name':'bleu','confirmed':False}],'sources':[{'url':'https://example.com/piano'}]})
+    monkeypatch.setattr(generation,'public_bytes',lambda *args: (_ for _ in ()).throw(ValueError('403')))
+    product=gen.resolve_external('Example HD42 bleu')
+    assert product['title']=='Example HD-42' and not product['ean']
+    assert product['thumbnail'] is None and product['media_status']=='needs_reference'
+    assert product['variant_uncertainty']=='Bleu à préciser'
+    monkeypatch.setattr(gen,'ask',lambda _: {'matched':False,'identity_uncertainty':'Deux modèles distincts'})
+    with pytest.raises(GenerationError,match='Deux modèles distincts'):gen.resolve_external('Example')
+
+
+def test_resolver_rejects_unobserved_image_url(store,monkeypatch):
+    import generation
+    gen=Generator(store)
+    answers=iter([{'matched':True,'brand':'Example','model':'42','title':'Example 42','manufacturer_url':'https://example.com/product','description':'Piano','sources':[{'url':'https://example.com/product'}]}, {'image_url':'https://example.com/invented.jpg','image_scope':'requested_variants'}])
+    monkeypatch.setattr(gen,'ask',lambda _:next(answers))
+    monkeypatch.setattr(generation,'public_bytes',lambda *args:b'<img src="/actual.jpg" alt="Example 42">')
+    assert gen.resolve_external('Example 42')['thumbnail'] is None
+
+
+def test_reviewed_hailun_color_references_require_bay_blue_confirmation():
+    from reviewed_products import reviewed_references
+    identity={'brand':'Hailun','model':'HD-300'}
+    variants=[{'requested_name':'orange','manufacturer_name':'Warm Sun Orange'},{'requested_name':'bleu ciel','manufacturer_name':'Bay Blue'},{'requested_name':'bleu nuit','manufacturer_name':'Deep Sea Blue'}]
+    assert reviewed_references(identity,variants,'HD300 bleu ciel')==[]
+    refs=reviewed_references(identity,variants,'HD300 bleu ciel = Bleu Baie (Bay Blue)')
+    assert [r['label'] for r in refs]==['Warm Sun Orange','Bay Blue','Deep Sea Blue']
+    assert [r['url'].rsplit('-',1)[-1] for r in refs]==['3.jpg','7.jpg','2.jpg']
+    assert reviewed_references({'brand':'Hailun','model':'HD-3000'},variants,'Bay Blue')==[]
+    assert reviewed_references(identity,[{'requested_name':'bleu aqua','manufacturer_name':'Water Green Blue'}],'bleu aqua')==[]
+
+
+def test_three_references_sent_acknowledged_and_sealed(store,monkeypatch):
+    import base64,io
+    from PIL import Image
+    import generation
+    images={}
+    for i,color in enumerate(('orange','skyblue','navy')):
+        buf=io.BytesIO();Image.new('RGB',(400,300),color).save(buf,format='PNG');images['https://example.com/'+str(i)]=buf.getvalue()
+    scene=io.BytesIO();Image.linear_gradient('L').resize((1024,1536)).convert('RGB').save(scene,format='PNG')
+    identifier=create_item(store)
+    with store.db() as db:
+        row=store.item(identifier,db)
+        product={'id':'piano','title':'Piano trois couleurs','thumbnail':next(iter(images)),'reference_images':[{'url':url,'label':str(i)} for i,url in enumerate(images)],'requested_variants':[{}, {}, {}],'image_scope':'requested_variants'}
+        plan={'subjects':[{'kind':'product','product_id':'piano'}],'products':[product]}
+        db.execute('UPDATE weeks SET plan=? WHERE id=?',(dumps(plan),row['week_id']))
+        db.execute("UPDATE items SET content=?,status='rendering' WHERE id=?",(dumps({**row['content'],'product_id':'piano'}),identifier))
+    monkeypatch.setattr(generation,'public_bytes',lambda url,*args:images[url])
+    def bridge(path,payload,**kwargs):
+        assert 'reference_image' not in payload
+        refs=[base64.b64decode(r['b64_json']) for r in payload['reference_images']]
+        assert len(refs)==3 and len(set(refs))==3
+        return {'reference_images_sha256':[hashlib.sha256(r).hexdigest() for r in refs],'data':[{'b64_json':base64.b64encode(scene.getvalue()).decode()}]}
+    gen=Generator(store);monkeypatch.setattr(gen,'bridge',bridge);gen.render(identifier)
+    item=store.item(identifier)
+    assert item['status']=='review' and not item['approval_hash']
+    for key in ('source_media','source_media_2','source_media_3'):
+        assert item['media']['hashes'][key]==hashlib.sha256((store.root/'media'/item['media'][key]).read_bytes()).hexdigest()
+    original_bridge=bridge
+    def reversed_ack(*args,**kwargs):
+        result=original_bridge(*args,**kwargs);result['reference_images_sha256'].reverse();return result
+    monkeypatch.setattr(gen,'bridge',reversed_ack)
+    with pytest.raises(GenerationError,match='référence'):gen.render(identifier)

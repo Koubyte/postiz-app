@@ -9,7 +9,7 @@ import { mkdtemp, writeFile, readFile, stat, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareImage, prepareReferenceImage, imageResponse, runImage, MAX_REFERENCE_BYTES } from './images.mjs';
+import { prepareImage, prepareReferenceImage, prepareReferenceImages, imageResponse, runImage, MAX_REFERENCE_BYTES, MAX_REFERENCES_BYTES } from './images.mjs';
 
 const messages = [{ role: 'user', content: 'Write a short French post.' }];
 const output = (content, tool_calls = []) => JSON.stringify({ choices: [{ content, tool_calls }] });
@@ -171,6 +171,8 @@ process.stdin.on('end', () => {
 });
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+const webp = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+const jpeg = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ADoDFU3/2Q==';
 test('native Codex images reach the OpenAI image client as base64', async t => {
   const { client } = await fixture(t, { imageRunner: async () => imageResponse({ status: 'completed', result: png }) });
   const result = await client.images.generate({ model: 'codex', prompt: 'A blue square', size: '1024x1024' });
@@ -188,9 +190,7 @@ test('one reference photo is validated by encoding, MIME, signature and decoded 
   assert.equal(reference.extension, 'png');
   assert.equal(reference.bytes.toString('base64'), png);
   assert.equal(reference.sha256, createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex'));
-  const webp = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
   assert.equal(prepareReferenceImage({ mime_type: 'image/webp', b64_json: webp }).extension, 'webp');
-  const jpeg = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAABAAEDAREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ADoDFU3/2Q==';
   assert.equal(prepareReferenceImage({ mime_type: 'image/jpeg', b64_json: jpeg }).extension, 'jpg');
   assert.equal(prepareReferenceImage(undefined), undefined);
   for (const value of [null, [], [{ mime_type: 'image/png', b64_json: png }], {}, { mime_type: 'image/jpeg', b64_json: png }, { mime_type: 'image/svg+xml', b64_json: png }, { mime_type: 'image/png', b64_json: 'data:image/png;base64,' + png }, { mime_type: 'image/png', b64_json: png + '\n' }, { mime_type: 'image/png', b64_json: '!!!!' }, { mime_type: 'image/png', b64_json: png, path: '/private/file' }, { mime_type: 'image/webp', b64_json: Buffer.from('RIFF----WEBPwrong').toString('base64') }]) {
@@ -214,6 +214,41 @@ test('image endpoint forwards a validated reference while invalid inputs never r
   assert.equal(calls, 1);
 });
 
+test('reference collections accept one to three photos, reject ambiguity and enforce total size', () => {
+  const photo = { mime_type: 'image/png', b64_json: png };
+  assert.deepEqual(prepareReferenceImages({}), []);
+  assert.equal(prepareReferenceImages({ reference_images: [photo] }).length, 1);
+  assert.equal(prepareReferenceImages({ reference_images: [photo, photo, photo] }).length, 3);
+  for (const body of [{reference_images:[]}, {reference_images:null}, {reference_images:photo}, {reference_images:[photo,photo,photo,photo]}, {reference_images:[photo,null]}, {reference_image:photo,reference_images:[photo]}]) {
+    assert.throws(() => prepareImage({prompt:'Three actual product colors',...body}), e => e.status === 400 && e.code.startsWith('invalid_reference_image'));
+  }
+  const padded = size => ({mime_type:'image/png',b64_json:Buffer.concat([Buffer.from(png,'base64'),Buffer.alloc(size-Buffer.from(png,'base64').length)]).toString('base64')});
+  const within = padded(MAX_REFERENCES_BYTES/3);
+  assert.equal(prepareReferenceImages({reference_images:[within,within,within]}).reduce((sum,image)=>sum+image.bytes.length,0), MAX_REFERENCES_BYTES);
+  const over = padded(MAX_REFERENCES_BYTES/3+1);
+  assert.throws(() => prepareReferenceImages({reference_images:[over,over,over]}), e => e.status===413 && e.code==='reference_images_too_large');
+});
+
+test('image HTTP endpoint passes all variant photos in order and rejects conflicting shapes', async t => {
+  const photos=[{mime_type:'image/png',b64_json:png},{mime_type:'image/webp',b64_json:webp},{mime_type:'image/jpeg',b64_json:jpeg}];
+  let calls=0;
+  const {baseURL}=await fixture(t,{imageRunner:async({prompt,referenceImage,referenceImages})=>{
+    calls++;
+    assert.equal(referenceImage,undefined);
+    assert.deepEqual(referenceImages.map(image=>image.bytes.toString('base64')),photos.map(image=>image.b64_json));
+    assert.match(prompt,/3 product reference/);
+    assert.match(prompt,/Do not recolor one variant/);
+    return imageResponse({status:'completed',result:png});
+  }});
+  const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
+  const post=body=>fetch(baseURL+'/images/generations',{method:'POST',headers,body:JSON.stringify({prompt:'Use all three exact variants',...body})});
+  assert.equal((await post({reference_images:photos})).status,200);
+  assert.equal((await post({reference_image:photos[0],reference_images:photos})).status,400);
+  assert.equal((await post({reference_images:[...photos,photos[0]]})).status,400);
+  assert.equal((await post({padding:'x'.repeat(18*1024*1024)})).status,413);
+  assert.equal(calls,1);
+});
+
 test('app-server receives the reference as a private localImage, returns its hash and cleans it', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'postiz-image-rpc-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -229,8 +264,9 @@ lines.on('line',line=>{
   if(call.method==='initialize')reply(call.id,{});
   if(call.method==='thread/start')reply(call.id,{thread:{id:'image-thread'}});
   if(call.method==='turn/start'){
-    const ref=call.params.input.find(part=>part.type==='localImage');
-    fs.writeFileSync(${JSON.stringify(capturePath)},JSON.stringify({input:call.params.input,args:process.argv.slice(2),reference:ref?fs.readFileSync(ref.path).toString('base64'):null,mode:ref?(fs.statSync(ref.path).mode&0o777):null,apiKeyInherited:!!process.env.OPENAI_API_KEY}));
+    const refs=call.params.input.filter(part=>part.type==='localImage');
+    const ref=refs[0];
+    fs.writeFileSync(${JSON.stringify(capturePath)},JSON.stringify({input:call.params.input,args:process.argv.slice(2),references:refs.map(image=>({path:image.path,bytes:fs.readFileSync(image.path).toString('base64'),mode:fs.statSync(image.path).mode&0o777})),reference:ref?fs.readFileSync(ref.path).toString('base64'):null,mode:ref?(fs.statSync(ref.path).mode&0o777):null,apiKeyInherited:!!process.env.OPENAI_API_KEY}));
     reply(call.id,{turn:{id:'image-turn'}});
     console.log(JSON.stringify({method:'item/completed',params:{item:{type:'imageGeneration',status:'completed',result:${JSON.stringify(png)}}}}));
   }
@@ -244,6 +280,7 @@ lines.on('line',line=>{
   assert.equal(actual.mode, 0o600);
   assert.equal(actual.apiKeyInherited, false);
   assert.equal(result.reference_image_sha256, referenceImage.sha256);
+  assert.deepEqual(result.reference_images_sha256, [referenceImage.sha256]);
   assert.equal(result.data[0].b64_json, png);
   assert.match(actual.input[0].text, /referenced_image_paths/);
   assert.ok(actual.input[0].text.includes(JSON.stringify([ref.path])));
@@ -251,7 +288,21 @@ lines.on('line',line=>{
   await assert.rejects(stat(ref.path), e => e.code === 'ENOENT');
   const withoutReference = await runImage({ prompt: prepareImage({ prompt: 'Empty studio' }) }, { CODEX_BIN: executable, CODEX_HOME: directory });
   assert.equal(Object.hasOwn(withoutReference, 'reference_image_sha256'), false);
+  assert.equal(Object.hasOwn(withoutReference, 'reference_images_sha256'), false);
   assert.equal(JSON.parse(await readFile(capturePath, 'utf8')).input.length, 1);
+  const reference_images=[{mime_type:'image/png',b64_json:png},{mime_type:'image/webp',b64_json:webp},{mime_type:'image/jpeg',b64_json:jpeg}];
+  const referenceImages=prepareReferenceImages({reference_images});
+  const multiple=await runImage({prompt:prepareImage({prompt:'All three exact color variants together',reference_images}),referenceImages},{CODEX_BIN:executable,CODEX_HOME:directory});
+  const all=JSON.parse(await readFile(capturePath,'utf8'));
+  assert.equal(all.references.length,3);
+  assert.deepEqual(all.references.map(image=>image.bytes),[png,webp,jpeg]);
+  assert.deepEqual(all.references.map(image=>image.mode),[0o600,0o600,0o600]);
+  assert.equal(new Set(all.references.map(image=>image.path)).size,3);
+  assert.deepEqual(multiple.reference_images_sha256,referenceImages.map(image=>image.sha256));
+  assert.equal(Object.hasOwn(multiple,'reference_image_sha256'),false);
+  assert.ok(all.input[0].text.includes(JSON.stringify(all.references.map(image=>image.path))));
+  assert.match(all.input[0].text,/do not synthesize new color variants/);
+  for(const image of all.references)await assert.rejects(stat(image.path),e=>e.code==='ENOENT');
 });
 
 test('image-only request budget supports photos above 1 MiB; text keeps its existing limit', async t => {

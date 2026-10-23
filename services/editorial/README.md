@@ -77,3 +77,13 @@ The Planète Laser storefront feed implementation lives in Koubyte/PL-v2.
 Service changes are in docker-compose.coolify.yaml. Keep its canonical Coolify
 private variables configured before a full application rebuild. Only the studio
 service needs rebuilding for a studio-only update.
+
+
+Product research separates model identity from variant and photo evidence. A missing
+EAN or photo never makes a sourced model unknown. Variant/media uncertainty is
+shown on the plan and blocks only image production until resolved.
+`reviewed_products.py` keeps inspected manufacturer references (source and review
+date); the HD-300 sky-blue nickname requires an explicit Bay Blue clarification.
+Up to three reference photos are passed in order to the image bridge. Every
+attachment must be acknowledged by its SHA-256; all reference files are retained
+for review and sealed with the final approved visual. No cutout/compositing occurs.
