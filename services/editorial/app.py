@@ -8,7 +8,7 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 import requests
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from store import Store, Conflict, now, uid, dumps, PARIS, monday_next
 from generation import Generator, GenerationError, validate_plan, validate_content, safe_sources
@@ -147,7 +147,7 @@ def editable_content(value,item):
 @app.get('/health')
 def health():return {'status':'ok'}
 @app.get('/editorial')
-def redirect():return RedirectResponse('/editorial/')
+def redirect():return FileResponse(ROOT/'static'/'index.html')
 @app.get('/editorial/')
 def index():return FileResponse(ROOT/'static'/'index.html')
 
