@@ -1,7 +1,7 @@
 'use strict';
 // Shared Postiz session and the same exact-version review dialog as weekly posts.
 const chat = { id: null, data: null, photos: [], loading: false, sending: false, signature: '', recorder: null, stream: null, voiceBusy: false, timer: null };
-const chatError = (text='') => { $('chat-error').textContent=text; $('chat-error').hidden=!text; };
+const chatError = (text='', transient=false) => { chat.fetchError=transient; $('chat-error').textContent=text; $('chat-error').hidden=!text; };
 function chatMode() {
   const active=location.hash==='#discussion';
   $('chat-panel').hidden=!active; $('weekly-panel').hidden=active;
@@ -92,7 +92,8 @@ async function refreshChat() {
     if(chat.id)chat.data=await api(`/conversations/${chat.id}`);
     else chat.data={messages:[],photos:[],items:[]};
     renderChat();
-  } catch(e){chatError(e.message);}finally{chat.loading=false;}
+    if(chat.fetchError)chatError();
+  } catch(e){chatError(e.message,true);}finally{chat.loading=false;}
 }
 window.refreshChat=refreshChat;
 window.chatItem=id=>chat.data?.items.find(i=>i.id===id);
