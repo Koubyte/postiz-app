@@ -129,7 +129,7 @@ on-demand preparation and delivery. Supported planning horizon: 90 days.
 
 The microphone uses MediaRecorder with runtime WebM/MP4 support detection. Dictation
 stops at 175 seconds or when the page goes into the background. It is transcribed
-by the private `services/transcription` Faster Whisper service on CPU (small model,
+by the private `services/transcription` Faster Whisper service on CPU (medium model,
 int8, two threads, 3 GiB limit). The text goes into the editable composer, never
 automatically to the agent. Speech is not retained. Recording permission denial,
 silence, unavailable model, unsupported browser and oversized audio leave typing

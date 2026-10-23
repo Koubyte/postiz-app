@@ -196,9 +196,9 @@ class Generator:
         else:
             fmt='{"title":str,"headline":str,"facebook":str,"instagram":str,"alt":str,"sources":[{"title":str,"url":str}],"uncertainty":str}'
             instruction='Rédigez une publication Facebook (90 à 160 mots) et Instagram (70 à 140 mots, maximum 5 hashtags pertinents). Headline : 4 à 7 mots, pas de nom de modèle dans le titre visuel si trop long. Un conseil concret, ton chaleureux et précis, pas de superlatifs creux. Pas de Markdown ou HTML dans les textes sociaux, sauts de ligne autorisés. N’annoncez aucun article à venir et n’ajoutez aucun lien de blog non publié.'
-        feedback=item['content'].get('_feedback','')
+        feedback=item['content'].get('_feedback','') or brief.get('instruction','')
         if product and product.get('note'):instruction+='\nInformation locale fournie directement par le propriétaire (pas une donnée web) : '+str(product['note'])[:3000]+'. Une nouveauté en magasin ainsi confirmée peut être annoncée comme telle ; ne pas la transformer en lancement mondial ni inventer de date, de quantité ou de promotion.'
-        if feedback:instruction+='\nCorrection demandée par le propriétaire : '+str(feedback)[:2000]+'\nProposition précédente : '+dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})[:14000]
+        if feedback:instruction+='\nLa correction suivante prime sur les longueurs indicatives ci-dessus. Correction demandée par le propriétaire : '+str(feedback)[:2000]+'\nProposition précédente : '+dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','markdown')})[:14000]
         content=self.ask(instruction+'\nLe champ uncertainty doit être exactement une chaîne vide si les faits inclus dans la rédaction sont vérifiés. Sinon décrivez uniquement le point bloquant.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
         content=validate_content(content,item['kind'])
         uncertainty=content.pop('uncertainty','').strip()

@@ -174,3 +174,14 @@ def test_auth_csrf_and_binary_upload_limits(tmp_path,monkeypatch):
         assert client.post('/editorial/api/conversations/'+cid+'/photos',content=b'x'*(12*1024*1024+1),headers=headers).status_code==413
         assert client.post('/editorial/api/transcribe',content=b'',headers=headers).status_code==400
         assert client.get('/editorial/api/conversations/'+cid).json()['items']==[]
+
+def test_correction_keeps_price_confirmed_in_form_and_full_instruction(setup,monkeypatch):
+    store,generator,chat=setup;cid,mid=proposed(chat,store)
+    item=chat.accept(cid,mid,{'index':0,'price':799},'owner')
+    with store.db() as db:db.execute("UPDATE items SET status='review' WHERE id=?",(item,))
+    instruction='Raccourcis à 30 mots et garde mon prix.'
+    turn=chat.send(cid,{'id':uid(),'text':instruction,'target':item},'owner')
+    monkeypatch.setattr(generator,'ask',lambda p:{'reply':'D’accord.','proposals':[proposal(price=None,price_action='keep')]})
+    chat.answer(turn)
+    with store.db() as db:p=json.loads(db.execute('SELECT proposals FROM messages WHERE id=?',('reply-'+turn,)).fetchone()[0])[0]
+    assert p['price']==799 and p['instruction']==instruction
