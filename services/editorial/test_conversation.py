@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).parent))
-from store import Store,Conflict,dumps,uid
+from store import Store,Conflict,dumps,uid,PARIS
 from generation import Generator,GenerationError
 from conversation import Conversation
 from spacing import available_slot,reservations,calendar_times
@@ -32,7 +32,9 @@ def proposed(service,store,conversation_id=None,props=None,target=None):
 def test_extra_batch_never_creates_or_modifies_week(setup):
     store,generator,chat=setup;week=store.prepare()
     with store.db() as db:before=[dict(r) for r in db.execute('SELECT * FROM weeks')]
-    cid,mid=proposed(chat,store,props=[proposal(),proposal(title='Deuxième piano')])
+    # Keep this exact-gap check in daylight, independent of the test run's hour.
+    slot=(datetime.now(PARIS)+timedelta(days=1)).replace(hour=10,minute=0,second=0,microsecond=0).isoformat()
+    cid,mid=proposed(chat,store,props=[proposal(scheduled_at=slot),proposal(title='Deuxième piano',scheduled_at=slot)])
     one=chat.accept(cid,mid,{'index':0},'owner');two=chat.accept(cid,mid,{'index':1},'owner')
     with store.db() as db:
         assert before==[dict(r) for r in db.execute('SELECT * FROM weeks')]

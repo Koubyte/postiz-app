@@ -2,53 +2,34 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#030303" />
     <title>Studio éditorial · Planète Laser</title>
-    <link rel="stylesheet" href="/editorial/static/style.css" />
+    <link rel="stylesheet" href="/editorial/static/style.css?v=chat-mobile-1" />
     <script src="/editorial/static/app.js" defer></script>
-    <script src="/editorial/static/chat.js" defer></script>
+    <script src="/editorial/static/chat.js?v=chat-mobile-1" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Aller au contenu</a>
-    <header class="topbar">
-      <a class="brand" href="/editorial" aria-label="Studio Planète Laser"
-        ><img
-          src="/editorial/static/assets/logo-rect.png"
-          alt="Planète Laser depuis 1989"
-        /><span>Studio éditorial</span></a
-      >
-      <nav aria-label="Navigation">
-        <a href="/" class="quiet-link">Ouvrir Postiz ↗</a
-        ><button id="pause" class="button secondary" disabled>Suspendre</button>
-      </nav>
+    <header class="studio-header">
+      <button type="button" id="studio-menu-open" class="studio-icon" aria-label="Ouvrir le menu" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/list.svg" alt="" /></button>
+      <a href="#discussion" class="studio-name">Planète Laser</a>
+      <button type="button" id="chat-history-open" class="studio-icon" aria-label="Historique des discussions" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/clock-counter-clockwise.svg" alt="" /></button>
     </header>
+    <dialog id="studio-menu" class="studio-menu" aria-labelledby="studio-menu-title">
+      <div class="dialog-heading"><h2 id="studio-menu-title">Studio IA</h2><button type="button" class="studio-icon close-dialog" aria-label="Fermer le menu"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
+      <nav aria-label="Navigation du studio">
+        <a href="#discussion" id="tab-chat">Discussion</a>
+        <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
+        <a href="/">Calendrier Postiz</a>
+      </nav>
+      <div class="studio-menu-history">
+        <label for="chat-history">Vos discussions</label><select id="chat-history" aria-label="Choisir une discussion"></select>
+        <button type="button" class="button secondary" id="chat-new">Nouvelle discussion</button>
+      </div>
+      <details class="studio-menu-settings"><summary>Réglages du studio</summary><button id="pause" class="button secondary" disabled>Suspendre</button></details>
+    </dialog>
     <main id="main">
-      <section class="hero">
-        <div>
-          <p class="eyebrow">LE MATÉRIEL PREND VIE</p>
-          <h1>
-            Vos idées prennent vie,<br /><span
-              >à votre rythme.</span
-            >
-          </h1>
-          <p class="intro">
-            7 sujets pour Facebook et Instagram, 1 article pour le blog.<br />Vous
-            gardez la main sur chaque publication.
-          </p>
-        </div>
-        <div class="hero-actions">
-          <a class="button primary" href="#discussion">Parler à l’IA · post à la demande</a>
-          <button class="button primary" id="request-open">
-            ＋ Mettre un article en avant</button
-          ><button class="button secondary" id="prepare" disabled>
-            Préparer la prochaine semaine
-          </button>
-          <p class="micro">
-            Préparation automatique le vendredi à 9 h · heure de Paris
-          </p>
-        </div>
-      </section>
       <div id="notice" class="notice" role="status" hidden></div>
       <div id="error" class="notice error" role="alert" hidden></div>
       <section id="login" class="empty" hidden>
@@ -60,36 +41,25 @@
         <a class="button primary" href="/auth/login">Se connecter</a>
       </section>
       <section id="workspace" aria-busy="true">
-        <nav class="studio-tabs" aria-label="Mode de création">
-          <a href="#discussion" id="tab-chat">Parler à l’IA</a>
-          <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
-        </nav>
-        <section id="chat-panel" hidden aria-labelledby="chat-title">
-          <div class="section-heading"><div><p class="eyebrow">VOS POSTS À LA DEMANDE</p><h2 id="chat-title">Une idée ? Parlons-en.</h2></div><button class="button secondary" id="chat-new">Nouvelle discussion</button></div>
-          <p class="muted">Un nouveau produit, une arrivée en magasin ou un conseil à partager. Ces posts s’ajoutent à votre semaine, avec au moins 2 heures entre deux sujets. Vous validez chaque publication.</p>
-          <label class="chat-history-label">Vos discussions<select id="chat-history" aria-label="Choisir une discussion"></select></label>
-          <div class="chat-layout">
-            <div class="chat-thread">
-              <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
-              <div id="chat-error" class="notice error" role="alert" hidden></div>
-              <form id="chat-form" class="chat-composer">
-                <label>Votre demande concerne<select id="chat-target"><option value="">De nouveaux posts / une question</option></select></label>
-                <label for="chat-text">Votre brief</label>
-                <textarea id="chat-text" rows="4" maxlength="6000" placeholder="Prépare 3 posts pour aujourd’hui : le Hailun HD300, le Casio CDP-S110 et un conseil pour choisir son piano. Pas de prix. On vient de les recevoir en magasin."></textarea>
-                <div id="chat-attachments" class="chat-attachments"></div>
-                <div class="chat-tools">
-                  <button type="button" id="chat-mic" class="button secondary" aria-pressed="false">🎙 Dicter</button>
-                  <button type="button" id="chat-photo" class="button secondary">＋ Photos</button>
-                  <input id="chat-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
-                  <button type="submit" id="chat-send" class="button primary">Envoyer le brief</button>
-                </div>
-                <p id="chat-voice-status" class="hint" role="status">Dictez jusqu’à 3 minutes, puis relisez le texte avant de l’envoyer.</p>
-              </form>
+        <section id="chat-panel" hidden aria-label="Discussion avec le Studio IA">
+          <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
+          <form id="chat-form" class="chat-composer">
+            <div id="chat-error" class="notice error" role="alert" hidden></div>
+            <div id="chat-correction" class="chat-correction" hidden><span id="chat-correction-label"></span><button type="button" id="chat-correction-cancel" class="studio-icon" aria-label="Annuler la correction"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
+            <select id="chat-target" aria-label="Post à corriger" hidden><option value="">De nouveaux posts / une question</option></select>
+            <div id="chat-attachments" class="chat-attachments"></div>
+            <div class="chat-input-row">
+              <button type="button" id="chat-photo" class="studio-icon" aria-label="Ajouter des photos"><img src="/editorial/static/assets/icons/image.svg" alt="" /></button>
+              <input id="chat-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
+              <textarea id="chat-text" rows="1" maxlength="6000" aria-label="Votre message" placeholder="Votre message…"></textarea>
+              <button type="submit" id="chat-send" class="studio-icon" aria-label="Envoyer le message" hidden><img src="/editorial/static/assets/icons/paper-plane-tilt.svg" alt="" /></button>
+              <button type="button" id="chat-mic" class="chat-mic" aria-pressed="false"><img src="/editorial/static/assets/icons/microphone.svg" alt="" /><span>Parler</span></button>
             </div>
-            <aside class="chat-results" aria-labelledby="chat-results-title"><h3 id="chat-results-title">Vos posts ponctuels</h3><p class="hint">Textes, visuels et horaire à valider ici avant tout envoi vers Postiz.</p><div id="chat-items"></div></aside>
-          </div>
+            <p id="chat-voice-status" class="hint" role="status">Publication après votre validation.</p>
+          </form>
         </section>
         <div id="weekly-panel">
+        <div class="weekly-actions"><button class="button secondary" id="request-open">Mettre un produit en avant</button><button class="button primary" id="prepare" disabled>Préparer la prochaine semaine</button></div>
         <div class="section-heading">
           <div>
             <p class="eyebrow">LE CALENDRIER</p>
