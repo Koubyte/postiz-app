@@ -1209,34 +1209,6 @@ function openItem(item) {
       el('p', { class: 'hint' }, 'En validant ce post avec cette case cochée, j’autorise la rédaction et la publication de l’article associé sur planetelaser.fr, sans deuxième validation. L’article sera publié dès qu’il sera rédigé et illustré, même si le post est programmé plus tard.')));
   }
   if (item.derived_from_post) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
-  const reviewCheck = el('input', { type: 'checkbox', disabled: true });
-  const images = [...media.querySelectorAll('img')];
-  function mediaReady() {
-    return (
-      Boolean(item.media_url || item.blog_media_url) &&
-      images.length > 0 &&
-      images.every((img) => img.complete && img.naturalWidth > 0)
-    );
-  }
-  function updateMediaCheck() {
-    reviewCheck.disabled =
-      item.status !== 'review' || state.dirty || !mediaReady();
-  }
-  images.forEach((img) => {
-    img.addEventListener('load', updateMediaCheck);
-    img.addEventListener('error', () => {
-      updateMediaCheck();
-      reviewCheck.checked = false;
-      approve.disabled = true;
-    });
-  });
-  const check = el(
-    'label',
-    { class: 'review-check' },
-    reviewCheck,
-    'J’ai relu les textes, vérifié les visuels et les droits d’utilisation des images. J’approuve ces contenus pour les canaux et la date affichés.',
-  );
-  if (!published) fields.append(check);
   const save = el(
     'button',
     { class: 'button secondary', type: 'button', disabled: immutable },
@@ -1273,19 +1245,10 @@ function openItem(item) {
   function markDirty() {
     state.dirty = true;
     approve.disabled = true;
-    reviewCheck.checked = false;
-    reviewCheck.disabled = true;
     save.textContent = 'Enregistrer mes modifications';
   }
-  createBlog.onchange = () => { reviewCheck.checked = false; approve.disabled = true; };
-  reviewCheck.onchange = () => {
-    approve.disabled =
-      !reviewCheck.checked ||
-      state.dirty ||
-      item.status !== 'review' ||
-      !mediaReady();
-  };
-  updateMediaCheck();
+  // The approval click is the owner's confirmation; image loading is not a gate.
+  approve.disabled = state.dirty || item.status !== 'review';
   save.onclick = () =>
     action(save, async () => {
       Object.entries(inputs).forEach(([k, v]) => (content[k] = v.value));
@@ -1306,15 +1269,14 @@ function openItem(item) {
     });
   approve.onclick = () =>
     action(approve, async () => {
-      if (!reviewCheck.checked || state.dirty || !mediaReady())
-        throw new Error('Relisez et confirmez la version enregistrée.');
+      if (state.dirty || item.status !== 'review')
+        throw new Error('Enregistrez les modifications avant de valider cette version.');
       if (new Date(item.scheduled_at).getTime() <= Date.now() + 300000)
         throw new Error(
           'Choisissez une date au moins cinq minutes dans le futur, enregistrez puis validez cette nouvelle version.',
         );
       await api(`/items/${encodeURIComponent(item.id)}/approve`, {
         revision: item.revision,
-        media_reviewed: true,
         create_blog: item.kind === 'social' && createBlog.checked,
       });
       state.dirty = false;

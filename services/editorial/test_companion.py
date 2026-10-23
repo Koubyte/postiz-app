@@ -221,7 +221,7 @@ def test_owner_http_approval_passes_opt_in_flag(store,monkeypatch):
         monkeypatch.setattr(module,'actor',actor)
         response=client.post(f'/editorial/api/items/{parent}/approve',json={'revision':1,'media_reviewed':True,'create_blog':True})
         assert response.status_code==403
-        response=client.post(f'/editorial/api/items/{parent}/approve',headers={'Origin':'https://postiz.example.com','X-Editorial-Action':'1'},json={'revision':1,'media_reviewed':True,'create_blog':True})
+        response=client.post(f'/editorial/api/items/{parent}/approve',headers={'Origin':'https://postiz.example.com','X-Editorial-Action':'1'},json={'revision':1,'create_blog':True})
         assert response.status_code==200,response.text
         assert store.item(parent)['companion_article']['status']=='queued'
         assert store.public_articles()==[]

@@ -283,7 +283,8 @@ async def item_action(id:str,request:Request):
                 if proposed!=item['scheduled_at']:
                     label=datetime.fromisoformat(proposed).astimezone(PARIS).strftime('%d/%m à %H:%M')
                     raise Conflict('Ce créneau est trop proche d’un autre sujet. Enregistrez un nouvel horaire, par exemple le '+label+' (Paris), puis validez.')
-        store.approve_item(id,data.get('revision'),who,data.get('media_reviewed'),data.get('create_blog',False))
+        # The authenticated approval click includes the owner's standing media confirmation.
+        store.approve_item(id,data.get('revision'),who,True,data.get('create_blog',False))
     else:
         with store.db() as db:
             item=store.item(id,db);store.check_revision(item,data.get('revision'))

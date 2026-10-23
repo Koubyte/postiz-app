@@ -289,3 +289,10 @@ normalized. Article bodies are never truncated. Invalid payloads, unsafe markup
 and links, platform limits, product reference integrity, explicit consent,
 revision sealing, scheduling spacing and duplicate-delivery protections remain.
 The public blog projection excludes these private notes.
+
+
+The owner's review screen uses a single **Approuver cette version** action. The
+separate media-rights checkbox and browser image-load gate are removed at the
+owner's request; the authenticated approval action carries that confirmation.
+Unsaved edits, unfinished content, revision checks and publication consent still
+apply. Selecting the companion-blog option does not itself approve anything.
