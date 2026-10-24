@@ -89,6 +89,11 @@ def test_spacing_excludes_own_reservation_but_keeps_other_subjects(control):
         db.execute("INSERT INTO deliveries VALUES('d',?,1,'facebook','submitted',?,'now')",(id,dumps([{'postId':'p1'}])))
     before=control.preview('POST','/posts',payload(snapshot,snapshot['posts'][0]['publishDate'],'schedule'))
     assert before['body']['date']==snapshot['posts'][0]['publishDate']
+    control.publisher.add('instagram-same-subject',date=before['body']['date'])
+    with control.store.db() as db:
+        db.execute("INSERT INTO deliveries VALUES('ig',?,1,'instagram','submitted',?,'now')",(id,dumps([{'postId':'instagram-same-subject'}])))
+    same_subject=control.preview('POST','/posts',payload(snapshot,before['body']['date'],'schedule'))
+    assert same_subject['body']['date']==before['body']['date']
     control.publisher.add('p2',date=before['body']['date'])
     after=control.preview('POST','/posts',payload(snapshot,before['body']['date'],'schedule'))
     assert datetime.fromisoformat(after['body']['date'])>=datetime.fromisoformat(before['body']['date'])+timedelta(hours=2)

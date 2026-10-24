@@ -44,14 +44,18 @@ class PostizControl:
             if any(e.get('postId',e.get('id')) in ids for e in entries if isinstance(e,dict)):linked.add(row['item_id'])
         return linked
     def occupied(self,ids):
-        native=calendar_times(self.publisher,ids)
         with self.store.db() as db:
             linked=self.linked(ids,db)
+            related=set(ids)
+            for row in db.execute('SELECT item_id,result FROM deliveries'):
+                if row['item_id'] not in linked:continue
+                value=json.loads(row['result']);entries=value if isinstance(value,list) else [value]
+                related.update(e.get('postId',e.get('id')) for e in entries if isinstance(e,dict))
             # Exclude only the local reservations for the same delivered subjects.
             local=[datetime.fromisoformat(r['scheduled_at']) for r in db.execute("SELECT id,scheduled_at FROM items WHERE kind='social' AND status NOT IN ('rejected','failed','blocked','managed')") if r['id'] not in linked]
             for row in db.execute("SELECT plan FROM weeks WHERE status IN ('plan_review','revising')"):
                 local += [datetime.fromisoformat(s['scheduled_at'].replace('Z','+00:00')) for s in json.loads(row['plan']).get('subjects',[]) if s.get('scheduled_at')]
-        return native+local
+        return calendar_times(self.publisher,related)+local
     def preview(self,method,path,body=None):
         if not any(re.fullmatch(pattern,path) for pattern in WRITE.get(method,())):raise Conflict('Opération Postiz non reconnue. Consultez get_postiz_capabilities.')
         body=json.loads(dumps(body or {}))
