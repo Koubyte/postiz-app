@@ -1,3 +1,8 @@
+import {
+  textModelOptions,
+  usesCodexImages,
+  generateCodexImage,
+} from '@gitroom/nestjs-libraries/openai/text-provider';
 import { Injectable } from '@nestjs/common';
 import {
   BaseMessage,
@@ -23,8 +28,7 @@ const tools = !process.env.TAVILY_API_KEY
 const toolNode = new ToolNode(tools);
 
 const model = new ChatOpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
-  model: 'gpt-4.1',
+  ...textModelOptions('gpt-4.1'),
   temperature: 0.7,
 });
 
@@ -322,7 +326,9 @@ export class AgentGraphService {
     try {
       const newContent = await Promise.all(
         (state.content || []).map(async (p) => {
-          const image = await dalle.invoke(p.prompt!);
+          const image = usesCodexImages()
+            ? await generateCodexImage(p.prompt!)
+            : await dalle.invoke(p.prompt!);
           return {
             ...p,
             image,

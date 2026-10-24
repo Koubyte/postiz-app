@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#030303" />
+    <title>Studio éditorial · Planète Laser</title>
+    <link rel="stylesheet" href="/editorial/static/style.css?v=postiz-nav-2" />
+    <script src="/editorial/static/app.js" defer></script>
+    <script src="/editorial/static/chat.js?v=chat-mobile-1" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Aller au contenu</a>
+    <header class="studio-header">
+      <button type="button" id="studio-menu-open" class="studio-icon" aria-label="Ouvrir le menu" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/list.svg" alt="" /></button>
+      <a href="#discussion" class="studio-name">Planète Laser</a>
+      <button type="button" id="chat-history-open" class="studio-icon" aria-label="Historique des discussions" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/clock-counter-clockwise.svg" alt="" /></button>
+    </header>
+    <nav class="postiz-navigation" aria-label="Postiz">
+      <a href="/launches">Calendrier Postiz</a>
+      <a href="/editorial/#discussion" aria-current="page">Studio IA</a>
+      <a href="/media">Médias</a>
+      <a href="/settings">Réglages</a>
+    </nav>
+    <dialog id="studio-menu" class="studio-menu" aria-labelledby="studio-menu-title">
+      <div class="dialog-heading"><h2 id="studio-menu-title">Studio IA</h2><button type="button" class="studio-icon close-dialog" aria-label="Fermer le menu"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
+      <nav aria-label="Navigation du studio">
+        <a href="#discussion" id="tab-chat">Discussion</a>
+        <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
+        <a href="/launches">Calendrier Postiz</a>
+      </nav>
+      <div class="studio-menu-history">
+        <label for="chat-history">Vos discussions</label><select id="chat-history" aria-label="Choisir une discussion"></select>
+        <button type="button" class="button secondary" id="chat-new">Nouvelle discussion</button>
+      </div>
+      <a href="/editorial/connect">Connecter Grok Bot</a>
+      <details class="studio-menu-settings"><summary>Réglages du studio</summary><button id="pause" class="button secondary" disabled>Suspendre</button></details>
+    </dialog>
+    <main id="main">
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="error" class="notice error" role="alert" hidden></div>
+      <section id="login" class="empty" hidden>
+        <h2>Connectez-vous à votre compte Postiz</h2>
+        <p>
+          Le studio utilise votre session Postiz pour protéger vos contenus et
+          vos validations.
+        </p>
+        <a class="button primary" href="/auth/login">Se connecter</a>
+      </section>
+      <section id="workspace" aria-busy="true">
+        <section id="chat-panel" hidden aria-label="Discussion avec le Studio IA">
+          <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
+          <form id="chat-form" class="chat-composer">
+            <div id="chat-error" class="notice error" role="alert" hidden></div>
+            <div id="chat-correction" class="chat-correction" hidden><span id="chat-correction-label"></span><button type="button" id="chat-correction-cancel" class="studio-icon" aria-label="Annuler la correction"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
+            <select id="chat-target" aria-label="Post à corriger" hidden><option value="">De nouveaux posts / une question</option></select>
+            <div id="chat-attachments" class="chat-attachments"></div>
+            <div class="chat-input-row">
+              <button type="button" id="chat-photo" class="studio-icon" aria-label="Ajouter des photos"><img src="/editorial/static/assets/icons/image.svg" alt="" /></button>
+              <input id="chat-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
+              <textarea id="chat-text" rows="1" maxlength="6000" aria-label="Votre message" placeholder="Votre message…"></textarea>
+              <button type="submit" id="chat-send" class="studio-icon" aria-label="Envoyer le message" hidden><img src="/editorial/static/assets/icons/paper-plane-tilt.svg" alt="" /></button>
+              <button type="button" id="chat-mic" class="chat-mic" aria-pressed="false"><img src="/editorial/static/assets/icons/microphone.svg" alt="" /><span>Parler</span></button>
+            </div>
+            <p id="chat-voice-status" class="hint" role="status">Publication après votre validation.</p>
+          </form>
+        </section>
+        <div id="weekly-panel">
+        <div class="weekly-actions"><button class="button secondary" id="request-open">Mettre un produit en avant</button><button class="button primary" id="prepare" disabled>Préparer la prochaine semaine</button></div>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LE CALENDRIER</p>
+            <h2>Le programme de la semaine</h2>
+          </div>
+          <label class="week-picker"
+            >Semaine<select id="weeks" aria-label="Choisir une semaine"></select
+          ></label>
+        </div>
+        <div id="stats" class="stats"></div>
+        <div id="week-content">
+          <div class="empty">
+            <span class="loading-dot"></span>
+            <p>Chargement de votre studio…</p>
+          </div>
+        </div>
+        <section class="requests-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">VOS PRIORITÉS</p>
+              <h2>À mettre en avant</h2>
+            </div>
+            <button id="request-open-bottom" class="button secondary">
+              Ajouter une demande
+            </button>
+          </div>
+          <p class="muted">
+            Un nom, un EAN ou un lien suffit pour lancer la recherche. Les
+            demandes sont intégrées aux prochains plans.
+          </p>
+          <div id="requests"></div>
+        </section>
+        <details class="activity">
+          <summary>Journal du studio</summary>
+          <div id="events"></div>
+        </details>
+        </div>
+      </section>
+      <footer>
+        Planète Laser · Charte « Le matériel prend vie »<span
+          >Une validation du plan autorise la création. Chaque contenu doit
+          ensuite être approuvé avant publication.</span
+        >
+      </footer>
+    </main>
+    <dialog id="request-dialog" aria-labelledby="request-title">
+      <form id="request-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">UNE ENVIE, UNE RÉFÉRENCE</p>
+            <h2 id="request-title">À mettre en avant</h2>
+          </div>
+          <button
+            class="icon-button close-dialog"
+            type="button"
+            aria-label="Fermer"
+          >
+            ×
+          </button>
+        </div>
+        <label
+          >Produit, nom + EAN ou lien<input
+            name="query"
+            required
+            maxlength="500"
+            placeholder="Ex. Yamaha P-145, un code EAN ou une fiche produit" /></label
+        ><label
+          >Votre consigne <span class="optional">facultatif</span
+          ><textarea
+            name="note"
+            rows="3"
+            maxlength="3000"
+            placeholder="Pour les débutants, à essayer au magasin, une idée de cadeau…"
+          ></textarea>
+        </label>
+        <div class="form-grid">
+          <label
+            >Affichage du prix<select name="price_mode" id="price-mode">
+              <option value="hide">Sans prix</option>
+              <option value="catalogue">Prix actuel du catalogue</option>
+              <option value="custom">Prix confirmé par moi</option>
+            </select></label
+          ><label
+            >Priorité<select name="priority">
+              <option value="normal">Normale</option>
+              <option value="high">Prioritaire</option>
+            </select></label
+          >
+        </div>
+        <label id="custom-price" hidden
+          >Prix TTC en euros<input
+            name="price"
+            type="number"
+            min="0.01"
+            max="99999.99"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="129,00"
+          /><span class="hint"
+            >Ce montant sera proposé pour votre validation avec le
+            contenu.</span
+          ></label
+        >
+        <p class="hint">
+          Une correspondance incertaine est signalée. Aucun prix trouvé chez un
+          concurrent n’est utilisé comme prix du magasin.
+        </p>
+        <div class="dialog-error notice error" role="alert" hidden></div>
+        <div class="dialog-footer">
+          <button type="button" class="button secondary close-dialog">
+            Annuler</button
+          ><button type="submit" class="button primary">
+            Ajouter à mes priorités
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="subject-dialog" aria-labelledby="subject-title">
+      <div id="subject-content"></div>
+    </dialog>
+    <dialog
+      id="item-dialog"
+      class="review-dialog"
+      aria-labelledby="review-title"
+    >
+      <div id="review-content"></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>
