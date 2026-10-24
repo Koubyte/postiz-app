@@ -29,7 +29,7 @@ stop=threading.Event()
 
 def calendar_times(exclude_ids=()):return read_calendar(publisher,exclude_ids)
 
-agent_service=AgentService(store,calendar_times)
+agent_service=AgentService(store,calendar_times,publisher)
 agent_mcp=build_mcp(agent_service)
 agent_asgi=BearerGate(agent_mcp.streamable_http_app(),agent_service)
 

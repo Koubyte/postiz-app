@@ -1084,3 +1084,10 @@ body.chat-mode { height:var(--chat-height,100dvh); overflow:hidden; display:flex
 
 #chat-panel h2,#chat-panel h4,.studio-menu h2 { font-family:OutfitUI,sans-serif; font-weight:600; }
 .chat-mode .toast { top:76px; bottom:auto; max-width:calc(100vw - 32px); pointer-events:none; }
+
+/* Shared destination links stay visible in the compact mobile chat. */
+.postiz-navigation { display:flex; flex:none; gap:6px; max-width:800px; width:100%; margin:0 auto; padding:0 12px 10px; overflow-x:auto; }
+.postiz-navigation a { display:flex; align-items:center; justify-content:center; min-height:40px; padding:6px 12px; border-radius:8px; white-space:nowrap; text-decoration:none; color:var(--muted); font-size:13px; }
+.postiz-navigation a[aria-current] { background:var(--panel2); color:var(--green); }
+.postiz-navigation a:hover { background:var(--panel2); color:var(--text); }
+@media(max-width:450px) { .postiz-navigation { gap:2px; padding:0 8px 6px; } .postiz-navigation a { padding:6px 9px; font-size:12px; } }

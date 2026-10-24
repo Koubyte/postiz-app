@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#030303" />
     <title>Studio éditorial · Planète Laser</title>
-    <link rel="stylesheet" href="/editorial/static/style.css?v=chat-mobile-1" />
+    <link rel="stylesheet" href="/editorial/static/style.css?v=postiz-nav-2" />
     <script src="/editorial/static/app.js" defer></script>
     <script src="/editorial/static/chat.js?v=chat-mobile-1" defer></script>
   </head>
@@ -16,12 +16,18 @@
       <a href="#discussion" class="studio-name">Planète Laser</a>
       <button type="button" id="chat-history-open" class="studio-icon" aria-label="Historique des discussions" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/clock-counter-clockwise.svg" alt="" /></button>
     </header>
+    <nav class="postiz-navigation" aria-label="Postiz">
+      <a href="/launches">Calendrier Postiz</a>
+      <a href="/editorial/#discussion" aria-current="page">Studio IA</a>
+      <a href="/media">Médias</a>
+      <a href="/settings">Réglages</a>
+    </nav>
     <dialog id="studio-menu" class="studio-menu" aria-labelledby="studio-menu-title">
       <div class="dialog-heading"><h2 id="studio-menu-title">Studio IA</h2><button type="button" class="studio-icon close-dialog" aria-label="Fermer le menu"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
       <nav aria-label="Navigation du studio">
         <a href="#discussion" id="tab-chat">Discussion</a>
         <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
-        <a href="/">Calendrier Postiz</a>
+        <a href="/launches">Calendrier Postiz</a>
       </nav>
       <div class="studio-menu-history">
         <label for="chat-history">Vos discussions</label><select id="chat-history" aria-label="Choisir une discussion"></select>

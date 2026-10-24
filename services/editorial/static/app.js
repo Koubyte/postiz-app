@@ -14,6 +14,7 @@ const labels = {
   preparing: 'Préparation du plan',
   publishing: 'Publication en cours',
   scheduled: 'Programmé dans Postiz',
+  managed: 'Géré dans le calendrier Postiz',
   rendering: 'Création du visuel',
   generating: 'En préparation',
   review: 'À relire',
@@ -1196,6 +1197,7 @@ function openItem(item) {
         ),
       ),
     );
+  if (item.status === 'managed') fields.append(el('a', { href: '/launches', class: 'button secondary' }, 'Ouvrir le calendrier Postiz'));
   const linkedArticle = item.companion_article;
   const createBlog = el('input', { type: 'checkbox', checked: linkedArticle ? linkedArticle.state === 'active' : item.blog_requested === true, disabled: item.status !== 'review' || linkedArticle?.status === 'published' });
   if (item.kind === 'social') {

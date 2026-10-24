@@ -22,7 +22,7 @@ def calendar_times(publisher,exclude_ids=()):
 
 def reservations(db,exclude=None):
     result=[]
-    for row in db.execute("SELECT id,scheduled_at FROM items WHERE kind='social' AND status NOT IN ('rejected','failed','blocked')"):
+    for row in db.execute("SELECT id,scheduled_at FROM items WHERE kind='social' AND status NOT IN ('rejected','failed','blocked','managed')"):
         if row['id']!=exclude:result.append(datetime.fromisoformat(row['scheduled_at']))
     for row in db.execute("SELECT plan FROM weeks WHERE status IN ('plan_review','revising')"):
         for s in json.loads(row['plan']).get('subjects',[]):

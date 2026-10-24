@@ -296,3 +296,30 @@ separate media-rights checkbox and browser image-load gate are removed at the
 owner's request; the authenticated approval action carries that confirmation.
 Unsaved edits, unfinished content, revision checks and publication consent still
 apply. Selecting the companion-blog option does not itself approve anything.
+
+
+### Native Postiz management through Grok
+
+The existing agent credential also enables get_postiz_capabilities, read_postiz,
+preview_postiz_change, apply_postiz_change and get_postiz_operation. Grok can
+write native drafts directly, edit text/images/provider settings, reschedule or
+withdraw scheduled posts, soft-delete posts, import media and read analytics.
+The new organization-scoped GET /public/v1/posts/:id returns editable post fields
+without integration credentials. Native changes preserve post IDs; full thread
+entries/settings/media must be carried through when editing. Postiz remains the
+authority for those changes. Delivered studio items are marked managed and their
+old delivery reconciliation stops, preventing stale studio data from overwriting
+the calendar. get_content returns their native post IDs.
+
+Every native mutation has a stored preview and a durable operation receipt.
+Scheduling and active-post changes require relaying explicit owner consent;
+draft preparation does not. Preview snapshots and two-hour spacing are checked
+again before scheduling. Ambiguous results are never automatically replayed,
+even across restarts or a new request ID for the same preview. Account/admin
+routes and credentials are not exposed. Postiz cannot rewrite already published
+Facebook/Instagram posts through these APIs; it must not republish them instead.
+
+edit_content saves Grok's exact text into a studio draft (including an approved
+item not yet delivered) without Codex rewriting. It invalidates prior consent.
+Text-only changes preserve images; visual-title changes render new images.
+Calendar, studio, media and settings links remain visible above the mobile chat.

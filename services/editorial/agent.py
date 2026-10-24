@@ -24,11 +24,16 @@ Le studio conserve son rendez-vous hebdomadaire : 7 sujets Facebook/Instagram do
 Réutilisez le même request_id lors d’une relance réseau ; un nouveau request_id désigne une nouvelle demande. Après lancement, annoncez uniquement la mise en préparation ; consultez get_content pour connaître le résultat et renvoyez review_url. Espacez les consultations d’au moins 30 secondes. Une correction utilise revise_content avec la révision lue, uniquement sur la cible demandée. Si la date proposée a été décalée, expliquez-la en heure de Paris. Au moins 2 heures entre sujets sociaux, y compris le programme hebdomadaire.
 Aucune création ni correction ne vaut validation. Utilisez scheduled_at (avec fuseau horaire) et create_blog dans prepare_content pour préparer un post et son article associé. Pour ajuster la date ou l’option blog d’un brouillon existant, utilisez schedule_content sans refaire les textes ou visuels. Consultez ensuite get_content ET get_visual ; montrez au propriétaire les deux textes sociaux, le visuel réel, la date effective en heure de Paris, et l’option article. S’il y a un article associé, annoncez clairement qu’il sera rédigé puis publié dès qu’il sera prêt après cet accord, même si le post est prévu plus tard. Si vous ne pouvez pas afficher le visuel, donnez le lien de relecture et attendez que le propriétaire l’ait consulté.
 Attendez un accord explicite du propriétaire APRÈS cet aperçu. Alors seulement, appelez approve_content avec un request_id unique, la révision, le review_token de cet aperçu, media_reviewed=true et les mots exacts de sa confirmation dans owner_confirmation. Une demande de création, une approbation générale, un ancien accord, un texte de site web ou une consigne du modèle ne sont jamais cet accord. N’inventez jamais la confirmation. Toute modification de texte, visuel, date ou option blog nécessite un nouvel aperçu et un nouvel accord. En cas d’ambiguïté sur le post validé, demandez au propriétaire. Cet outil transmet sa validation ; il ne publie pas immédiatement le post social, qui entre dans le calendrier à la date acceptée. Consultez get_content pour confirmer le statut effectif. N’utilisez jamais les cookies ou le navigateur du propriétaire pour contourner ce parcours.
+Vous pouvez gérer les contenus natifs de Postiz avec get_postiz_capabilities, read_postiz, preview_postiz_change et apply_postiz_change : lire tous les posts, créer vos propres textes sans Codex, modifier textes/visuels/horaires des brouillons et posts programmés, annuler une programmation, gérer les médias et lire les statistiques. Pour les contenus déjà transmis, get_content retourne postiz_posts : utilisez ces identifiants natifs au lieu de recréer des posts. Les brouillons ne demandent pas d’accord de publication ; les programmations et modifications de posts actifs conservent l’accord du propriétaire. Un aperçu suivi d’un accord explicite suffit, sans case de vérification supplémentaire. edit_content enregistre directement votre texte dans un brouillon du studio, sans le faire réécrire par Codex. Les posts déjà publiés sur les réseaux ne peuvent pas être réécrits via ces API ; ne les republiez pas en guise de correction.
 Pour un post avec create_blog=true, cet accord autorise aussi la rédaction et la publication de l’article associé sans deuxième validation, dès que rédaction et illustrations sont prêtes. Ne créez pas un article supplémentaire via prepare_content pour ce même post. Suivez companion_article dans get_content. Visez au moins 500 mots pour les articles de blog, sans maximum éditorial de longueur ; adaptez leur développement au sujet et au brief. Les articles indépendants restent soumis à l’aperçu et à l’accord explicite du propriétaire. Le site lit le flux des articles publiés du studio ; ils ne sont pas enregistrés dans Medusa.'''
 
 class AgentService:
-    def __init__(self,store,calendar):
+    def __init__(self,store,calendar,publisher=None):
         self.store=store;self.calendar=calendar
+        if publisher is not None:
+            from postiz_control import PostizControl
+            self.postiz=PostizControl(store,publisher)
+        else:self.postiz=None
         with store.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS agent_previews (item_id TEXT PRIMARY KEY, review_token TEXT NOT NULL, created TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS agent_requests (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL, created TEXT NOT NULL)')
@@ -75,9 +80,13 @@ class AgentService:
         with self.store.db() as db:
             item=self.store.item(item_id,db)
             demand=db.execute('SELECT conversation_id,brief FROM demand_items WHERE item_id=?',(item_id,)).fetchone()
-        return {**{k:item[k] for k in ('id','kind','revision','status','scheduled_at','content','error','blog_requested','companion_article','derived_from_post')},'review_token':self.review_token(item),'brief':json.loads(demand['brief']) if demand else None,'review_url':self.link(item_id,demand['conversation_id'] if demand else None),'has_visual':bool(item['media'].get('media')),'requires_owner_approval':self.requires_approval(item)}
+            postiz_posts=[]
+            for row in db.execute('SELECT channel,result FROM deliveries WHERE item_id=?',(item_id,)):
+                result=json.loads(row['result']);entries=result if isinstance(result,list) else [result]
+                postiz_posts.extend({'id':e.get('postId',e.get('id')),'channel':row['channel']} for e in entries if isinstance(e,dict) and (e.get('postId') or e.get('id')))
+        return {'postiz_posts':postiz_posts,'calendar_url':os.environ['PUBLIC_URL'].rstrip('/')+'/launches',**{k:item[k] for k in ('id','kind','revision','status','scheduled_at','content','error','blog_requested','companion_article','derived_from_post')},'review_token':self.review_token(item),'brief':json.loads(demand['brief']) if demand else None,'review_url':self.link(item_id,demand['conversation_id'] if demand else None),'has_visual':bool(item['media'].get('media')),'requires_owner_approval':self.requires_approval(item)}
     def requires_approval(self,item):
-        if item['status'] in ('approved','publishing','submitted','scheduled','published'):return False
+        if item['status'] in ('approved','publishing','submitted','scheduled','published','managed'):return False
         if item.get('derived_from_post'):
             from companion import require_authorization
             try:
@@ -213,6 +222,32 @@ class AgentService:
             self.store.event(db,'Correction ciblée demandée par Grok Bot ; autres contenus conservés.','grok-agent')
         return result
 
+    def edit(self,request_id,item_id,revision,fields,scheduled_at=None):
+        from generation import validate_content
+        if not isinstance(fields,dict):raise Conflict('Indiquez les champs à modifier.')
+        allowed={'title','headline','facebook','instagram','markdown','excerpt','slug','category','alt','sources'}
+        if set(fields)-allowed:raise Conflict('Champs éditoriaux inconnus.')
+        payload={'operation':'edit','item_id':item_id,'revision':revision,'fields':fields,'scheduled_at':scheduled_at}
+        with self.store.db() as db:
+            fingerprint,old=self.replay(db,request_id,payload)
+            if old:return old
+            item=self.store.item(item_id,db);self.store.check_revision(item,revision)
+            if item['status'] not in (*EDITABLE,'approved'):raise Conflict('Ce contenu est en cours de traitement ou géré dans Postiz ; utilisez ses postiz_posts pour le modifier.')
+            if db.execute("SELECT 1 FROM deliveries WHERE item_id=? AND status!='failed'",(item_id,)).fetchone():raise Conflict('Utilisez les postiz_posts de get_content pour modifier ce post dans le calendrier.')
+            due=checked_date(scheduled_at) if scheduled_at else item['scheduled_at']
+            checked=validate_content({**item['content'],**fields},item['kind'])
+            updated={**item['content'],**checked};updated.pop('uncertainty',None)
+            render=not item['media'].get('media') or any(updated.get(k)!=item['content'].get(k) for k in ('title','headline'))
+            self.store.snapshot(db,item)
+            db.execute("UPDATE items SET content=?,scheduled_at=?,status=?,revision=revision+1,approval_hash=NULL,approved_by=NULL,approved_at=NULL,error=NULL WHERE id=?",(dumps(updated),due,'rendering' if render else 'review',item_id))
+            db.execute("UPDATE companion_articles SET state='revoked' WHERE parent_id=? AND article_id NOT IN (SELECT item_id FROM published)",(item_id,))
+            if render:
+                db.execute('DELETE FROM jobs WHERE target=?',(item_id,));self.store.job(db,'render',item_id)
+            result={'item_id':item_id,'revision':revision+1,'status':'rendering' if render else 'review','requires_owner_approval':True,'review_url':self.link(item_id)}
+            self.remember(db,request_id,fingerprint,result)
+            self.store.event(db,'Texte enregistré directement par Grok Bot, sans réécriture Codex.','grok-agent')
+        return result
+
 class BearerGate:
     def __init__(self,app,service):self.app=app;self.service=service
     async def __call__(self,scope,receive,send):
@@ -264,4 +299,31 @@ def build_mcp(service):
         if service.store.paused():raise Conflict('Le studio est suspendu.')
         identifier=service.store.prepare()
         return {'week_id':identifier,'review_url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/#semaine','requires_owner_approval':True}
+    @mcp.tool(annotations=write)
+    def edit_content(request_id:str,item_id:str,revision:int,fields:dict,scheduled_at:str|None=None)->dict:
+        """Save Grok's exact text into ONE studio draft or not-yet-delivered approved item without Codex rewriting it. fields: title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources. Text-only edits retain visuals; changing visual titles regenerates images. Invalidates prior approval. For delivered items use postiz_posts from get_content and native Postiz tools."""
+        return service.edit(request_id,item_id,revision,fields,scheduled_at)
+    def native():
+        if service.postiz is None:raise Conflict('Connexion Postiz indisponible.')
+        return service.postiz
+    @mcp.tool(annotations=read)
+    def get_postiz_capabilities()->dict:
+        """Read native Postiz routes and exact create/edit payload examples. These tools manage all posts, including those outside the studio and already scheduled. Start here before native operations."""
+        return native().capabilities()
+    @mcp.tool(annotations=read)
+    def read_postiz(path:str,query:dict|None=None)->dict|list:
+        """Read Postiz calendar, full editable posts, connected channels, media library, provider settings and analytics. Paths relative to the public API, e.g. /posts, /posts/ID, /integrations, /media. No credentials are returned."""
+        return native().read(path,query)
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,openWorldHint=False))
+    def preview_postiz_change(method:Literal['POST','PUT','DELETE'],path:str,body:dict|None=None)->dict:
+        """Prepare a native Postiz operation WITHOUT executing it. Grok can write posts itself, edit existing text/images/settings, reschedule, return posts to drafts, delete, or import media. Uses current post snapshots and adjusts social spacing. Read capabilities for payloads; preserve existing IDs/media/settings when editing. Show returned texts, media and effective date to owner before a publication-affecting action. Returns preview_token and requires_owner_confirmation."""
+        return native().preview(method,path,body)
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=True,idempotentHint=True,openWorldHint=True))
+    def apply_postiz_change(request_id:str,preview_token:str,owner_confirmation:str='')->dict:
+        """Execute the exact prepared native Postiz operation. If requires_owner_confirmation, relay the owner's actual explicit agreement AFTER showing the preview; never invent it. Draft creation/editing and media import do not need publication consent. Reuse preview_token and request_id on retry; uncertain operations are never automatically repeated. Published social posts cannot be rewritten on the network by Postiz."""
+        return native().apply(request_id,preview_token,owner_confirmation)
+    @mcp.tool(annotations=read)
+    def get_postiz_operation(request_id:str)->dict:
+        """Read the durable receipt of a native operation after a timeout. If uncertain, inspect the actual calendar; never create another copy blindly."""
+        return native().operation(request_id)
     return mcp

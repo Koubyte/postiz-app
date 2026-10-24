@@ -104,7 +104,7 @@ def test_mcp_transport_auth_and_scoped_owner_approval(service,monkeypatch):
         assert init.status_code==200 and 'result' in init.json()
         result=rpc('tools/list').json()['result']
         names={tool['name'] for tool in result['tools']}
-        assert names=={'get_editorial_context','get_content','get_visual','prepare_content','revise_content','prepare_week','schedule_content','approve_content'}
+        assert names=={'get_editorial_context','get_content','get_visual','prepare_content','revise_content','prepare_week','schedule_content','approve_content','edit_content','get_postiz_capabilities','read_postiz','preview_postiz_change','apply_postiz_change','get_postiz_operation'}
         response=rpc('tools/call',{'name':'approve_item','arguments':{}}).json()
         assert response['result']['isError'] is True
         response=rpc('tools/call',{'name':'get_editorial_context','arguments':{}}).json()
