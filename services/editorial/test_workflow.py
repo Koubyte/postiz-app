@@ -391,6 +391,16 @@ def test_identity_survives_missing_photo_ean_and_variant_uncertainty(store,monke
     with pytest.raises(GenerationError,match='Deux modèles distincts'):gen.resolve_external('Example')
 
 
+def test_confirmed_finish_is_not_blocked_by_an_uncertain_ean(store,monkeypatch):
+    import generation
+    gen=Generator(store)
+    monkeypatch.setattr(gen,'ask',lambda _: {'matched':True,'brand':'Yamaha','model':'CLP-825','title':'Yamaha CLP-825 Black','manufacturer_url':'https://example.com/piano','description':'Piano','identity_uncertainty':'','variant_uncertainty':'La finition Black est confirmée ; l’EAN est incertain.','requested_variants':[{'requested_name':'Black','manufacturer_name':'Black','confirmed':True}],'sources':[{'url':'https://example.com/piano'}]})
+    monkeypatch.setattr(generation,'public_bytes',lambda *args: (_ for _ in ()).throw(ValueError('offline')))
+    product=gen.resolve_external('Yamaha CLP-825 Black')
+    assert product['variant_uncertainty']==''
+    assert 'EAN est incertain' in product['research_notes']
+
+
 def test_resolver_rejects_unobserved_image_url(store,monkeypatch):
     import generation
     gen=Generator(store)

@@ -72,7 +72,7 @@ class Generator:
         matches=[p for p in products if tokens and all(w in (p['title']+' '+p['ean']+' '+p['id']).casefold() for w in tokens)]
         return matches[0] if len(matches)==1 else None
     def resolve_external(self,query):
-        value=self.ask('Identifiez le MODÈLE de ce produit avec recherche Internet : '+query+'\nSéparez impérativement identité du modèle, variantes et photographie. Cherchez aussi la référence avec ou sans tiret/espace et les marques/gammes équivalentes. matched=true dès que marque et modèle sont confirmés par une source fabricant. Un EAN absent, une photo non trouvée ou un nom de couleur courant incertain NE rendent PAS le modèle inconnu. Une demande de plusieurs coloris porte sur un même modèle, pas sur un SKU unique. Les synonymes commerciaux locaux doivent être rapprochés des noms fabricant, sans inventer une correspondance ambiguë.\nRetournez {"matched":bool,"title":str,"brand":str,"model":str,"ean":str,"manufacturer_url":str,"description":str,"identity_uncertainty":str,"variant_uncertainty":str,"requested_variants":[{"requested_name":str,"manufacturer_name":str,"confirmed":bool}],"sources":[{"title":str,"url":str}]}. identity_uncertainty est vide si le modèle est certain. Les autres réserves vont uniquement dans variant_uncertainty. EAN vide si non connu. Aucun prix ni disponibilité magasin inventés. Ne devinez aucune URL.')
+        value=self.ask('Identifiez le MODÈLE de ce produit avec recherche Internet : '+query+'\nSéparez impérativement identité du modèle, variantes et photographie. Cherchez aussi la référence avec ou sans tiret/espace et les marques/gammes équivalentes. matched=true dès que marque et modèle sont confirmés par une source fabricant. Un EAN absent, une photo non trouvée ou un nom de couleur courant incertain NE rendent PAS le modèle inconnu. Une demande de plusieurs coloris porte sur un même modèle, pas sur un SKU unique. Les synonymes commerciaux locaux doivent être rapprochés des noms fabricant, sans inventer une correspondance ambiguë.\nRetournez {"matched":bool,"title":str,"brand":str,"model":str,"ean":str,"manufacturer_url":str,"description":str,"identity_uncertainty":str,"variant_uncertainty":str,"research_notes":str,"requested_variants":[{"requested_name":str,"manufacturer_name":str,"confirmed":bool}],"sources":[{"title":str,"url":str}]}. identity_uncertainty est vide si le modèle est certain. variant_uncertainty concerne uniquement un coloris demandé non confirmé. Ne mettez jamais un doute sur l’EAN, le prix ou la disponibilité dans variant_uncertainty : indiquez-le dans research_notes. EAN vide si non connu. Aucun prix ni disponibilité magasin inventés. Ne devinez aucune URL.')
         sources=safe_sources(value.get('sources'))
         if value.get('matched') is not True or value.get('identity_uncertainty') or not sources:
             detail=str(value.get('identity_uncertainty') or 'Marque et modèle non corroborés par une source fabricant.')[:350]
@@ -82,6 +82,12 @@ class Generator:
         variants=[]
         for v in (value.get('requested_variants') or [])[:8]:
             if isinstance(v,dict) and isinstance(v.get('requested_name'),str):variants.append({'requested_name':v['requested_name'][:100],'manufacturer_name':str(v.get('manufacturer_name',''))[:100],'confirmed':v.get('confirmed') is True})
+        # Keep EAN/research doubts as notes when every requested finish is confirmed.
+        # An empty variant list means there was no finish-specific uncertainty to gate.
+        research_notes=str(value.get('research_notes') or '')[:800]
+        if all(v['confirmed'] for v in variants) and value.get('variant_uncertainty'):
+            research_notes=(research_notes+' '+str(value['variant_uncertainty'])).strip()[:800]
+            value['variant_uncertainty']=''
         from reviewed_products import reviewed_references
         references=reviewed_references(value,variants,query)
         photo=None;image_scope=None;photo_note='Photo du modèle à rechercher avant création du visuel.'
@@ -103,7 +109,7 @@ class Generator:
         except (GenerationError,ValueError,OSError,requests.RequestException):
             pass  # Identified products remain usable in the plan; media is a separate gate.
         key=str(value.get('brand',''))+' '+str(value.get('model') or value['title'])
-        return {'id':'external-'+hashlib.sha256(re.sub(r'[^a-z0-9]','',key.casefold()).encode()).hexdigest()[:16],'title':bounded_text(value['title'],180),'ean':str(value.get('ean',''))[:32],'thumbnail':photo,'url':url,'description':bounded_text(value.get('description',''),1000),'external':True,'price':None,'available':None,'image_mask_required':False,'sources':sources,'request_query':query,'reference_images':references,'requested_variants':variants,'variant_uncertainty':str(value.get('variant_uncertainty',''))[:800],'media_status':'ready' if photo else 'needs_reference','image_scope':image_scope if photo else None,'media_note':photo_note}
+        return {'id':'external-'+hashlib.sha256(re.sub(r'[^a-z0-9]','',key.casefold()).encode()).hexdigest()[:16],'title':bounded_text(value['title'],180),'ean':str(value.get('ean',''))[:32],'thumbnail':photo,'url':url,'description':bounded_text(value.get('description',''),1000),'external':True,'price':None,'available':None,'image_mask_required':False,'sources':sources,'request_query':query,'reference_images':references,'requested_variants':variants,'variant_uncertainty':str(value.get('variant_uncertainty',''))[:800],'research_notes':research_notes,'media_status':'ready' if photo else 'needs_reference','image_scope':image_scope if photo else None,'media_note':photo_note}
     def plan(self,week_id):
         products=self.products(force=True)
         with self.store.db() as db:
@@ -206,6 +212,8 @@ class Generator:
         content=self.ask(instruction+'\nContinuez la rédaction même si une source est inaccessible : omettez les affirmations invérifiables ou formulez-les avec la réserve appropriée. Ne les inventez pas. Le champ uncertainty contient les réserves utiles au propriétaire, ou une chaîne vide ; ce sont des remarques, jamais une demande de bloquer le brouillon.\nRecherchez et vérifiez les données fabricant nécessaires.\nBrief validé:'+dumps(brief)+'\nProduit:'+dumps(product)+'\nJSON attendu:'+fmt)
         content=validate_content(content,item['kind'])
         content.pop('uncertainty',None)
+        if product and product.get('research_notes'):
+            content['editorial_notes'].append('Recherche produit : '+str(product['research_notes'])[:800])
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un environnement pertinent pour le produit et son usage, à varier selon les scènes récentes')
         if feedback:content['_visual_feedback']=str(feedback)[:2000]
         price_text=None
