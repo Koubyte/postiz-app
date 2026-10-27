@@ -204,6 +204,7 @@ services:
   codex-bridge:
     build:
       context: ./services/codex-bridge
+    init: true
     environment:
       CODEX_BRIDGE_TOKEN: ${CODEX_BRIDGE_TOKEN:?}
       CODEX_HOME: /home/node/.codex
@@ -219,7 +220,7 @@ services:
     - no-new-privileges:true
     restart: unless-stopped
     mem_limit: 1g
-    pids_limit: 128
+    pids_limit: 512
     healthcheck:
       test:
       - CMD
