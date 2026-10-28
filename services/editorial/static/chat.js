@@ -14,13 +14,14 @@ function composerChanged() {
 }
 function draftKey() { return chat.ownerId ? `postiz-studio:draft:${chat.ownerId}:${chat.id || 'new'}` : null; }
 function saveChatDraft(force=false) {
-  const key=draftKey();if(!key||(!force&&chat.draftLoadedKey!==key))return;
+  const key=draftKey();if(!key||(!force&&chat.draftLoadedKey!==key))return false;
   try {
     const text=$('chat-text').value;
     if(chat.id)sessionStorage.setItem(`postiz-studio:last:${chat.ownerId}`,chat.id);
-    if(!text&&!chat.photos.length){sessionStorage.removeItem(key);return;}
+    if(!text&&!chat.photos.length){sessionStorage.removeItem(key);return true;}
     sessionStorage.setItem(key,JSON.stringify({text,photos:chat.photos.map(p=>p.id),target:$('chat-target').value,pendingId:chat.pendingId,pendingKey:chat.pendingKey}));
-  } catch { /* The conversation still works if browser storage is unavailable. */ }
+    return true;
+  } catch { return false; /* The conversation still works if browser storage is unavailable. */ }
 }
 function restoreChatDraft() {
   const key=draftKey();if(!key||chat.draftLoadedKey===key)return;
@@ -254,7 +255,13 @@ $('chat-mic').onclick=async()=>{
 };
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopRecording();});
 window.addEventListener('pagehide',()=>{saveChatDraft();stopRecording();chat.stream?.getTracks().forEach(t=>t.stop());});
-window.addEventListener('beforeunload',e=>{if($('chat-text').value||chat.photos.length||chat.voiceBusy){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{
+  const busy=chat.voiceBusy||chat.sending||chat.recorder;
+  const unsent=$('chat-text').value||chat.photos.length;
+  if(!busy&&!unsent)return;
+  if(!busy&&document.documentElement.classList.contains('postiz-embedded')&&saveChatDraft())return;
+  e.preventDefault();e.returnValue='';
+});
 $('chat-text').addEventListener('input',composerChanged);
 $('chat-correction-cancel').onclick=()=>{$('chat-target').value='';showCorrection();$('chat-text').focus();};
 $('studio-menu-open').onclick=()=>{$('studio-menu').showModal();loadDiscussions().catch(e=>chatError(e.message));};

@@ -4,13 +4,14 @@
 (() => {
   const namespace = 'postiz-studio';
   const studioPaths = new Set(['/editorial', '/editorial/', '/editorial/connect']);
+  const studioLinkPaths = new Set([...studioPaths, '/studio', '/studio/', '/studio/connect', '/studio/connect/']);
   const nativePaths = new Set(['/launches', '/media', '/settings', '/auth/login']);
   const url = new URL(location.href);
   const embedded = url.searchParams.get('embedded') === '1' && window.parent !== window;
   function nativeStudioPath(value) {
     const next = new URL(value, location.href);
     next.searchParams.delete('embedded');
-    next.pathname = next.pathname === '/editorial/connect' ? '/studio/connect' : '/studio';
+    next.pathname = ['/editorial/connect', '/studio/connect', '/studio/connect/'].includes(next.pathname) ? '/studio/connect' : '/studio';
     return next.pathname + next.search + next.hash;
   }
   if (!embedded) {
@@ -76,7 +77,7 @@
     if (!link || event.defaultPrevented || event.button !== 0 || link.hasAttribute('download')) return;
     const next = new URL(link.href, location.href);
     if (next.origin !== location.origin) return;
-    const studio = studioPaths.has(next.pathname);
+    const studio = studioLinkPaths.has(next.pathname);
     if (!studio && !nativePaths.has(next.pathname)) return;
     if (link.getAttribute('href') === '#main') {
       event.preventDefault();
