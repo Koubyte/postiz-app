@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { embeddedPath, nativePath, studioPath } from './studio-navigation';
 import styles from './studio.module.css';
 
@@ -20,12 +20,15 @@ const themeTokens = [
   '--new-back-drop', '--new-blockSeparator', '--new-table-header', '--new-table-border',
 ];
 
-export function Studio({ connection = false }: { connection?: boolean }) {
+export function Studio({ connection: initialConnection = false }: { connection?: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const host = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const [route, setRoute] = useState(connection ? '/studio/connect' : '/studio#discussion');
+  const [route, setRoute] = useState(initialConnection ? '/studio/connect' : '/studio#discussion');
+  const frameDocument = useRef<string | null>(null);
+  const pendingDocument = useRef<string | null>(null);
   const [frameSrc, setFrameSrc] = useState<string>();
   const [ready, setReady] = useState(false);
   const [slow, setSlow] = useState(false);
@@ -45,49 +48,65 @@ export function Studio({ connection = false }: { connection?: boolean }) {
     });
   }, [send]);
 
+  const sendRoute = useCallback((path: string) => {
+    const documentPath = path.split('#')[0];
+    if (frameDocument.current !== null && frameDocument.current !== documentPath) {
+      pendingDocument.current = documentPath;
+      setReady(false);
+      setSlow(false);
+    }
+    frameDocument.current = documentPath;
+    send({ type: 'route', path: embeddedPath(path, window.location.origin) });
+  }, [send]);
+
   const syncRoute = useCallback(() => {
     const path = studioPath(window.location.pathname + window.location.search + window.location.hash, window.location.origin);
     if (!path) return;
     setRoute(path);
-    send({ type: 'route', path: embeddedPath(path, window.location.origin) });
-  }, [send]);
+    sendRoute(path);
+  }, [sendRoute]);
 
   const navigate = useCallback((path: string, fromFrame = false) => {
     const normalized = studioPath(path, window.location.origin);
     if (!normalized) return;
-    const target = new URL(normalized, window.location.origin);
-    if (target.pathname !== window.location.pathname.replace(/\/$/, '')) {
-      router.push(normalized);
-      return;
-    }
     const current = studioPath(window.location.pathname + window.location.search + window.location.hash, window.location.origin);
+    // Both studio pages share this client shell. Keep a single history writer:
+    // mixing a Next transition with frame route reports can append the hash twice.
     if (current !== normalized) window.history.pushState(null, '', normalized);
     setRoute(normalized);
-    if (!fromFrame) send({ type: 'route', path: embeddedPath(normalized, window.location.origin) });
-  }, [router, send]);
+    if (fromFrame) frameDocument.current = normalized.split('#')[0];
+    else sendRoute(normalized);
+  }, [sendRoute]);
 
   useEffect(() => {
     setReady(false);
     setSlow(false);
     setFrameSrc(embeddedPath(window.location.pathname + window.location.search + window.location.hash, window.location.origin));
     syncRoute();
-  }, [connection, syncRoute]);
+  }, [syncRoute]);
 
   // Next navigation, browser back/forward and hash links all update the same frame.
-  useEffect(() => { syncRoute(); }, [searchParams, syncRoute]);
+  useEffect(() => { syncRoute(); }, [pathname, searchParams, syncRoute]);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return;
       const message = event.data;
       if (!message || typeof message !== 'object' || message.namespace !== namespace) return;
       if (message.type === 'ready') {
+        const reported = studioPath(message.path, window.location.origin);
+        // An old document can finish loading while the requested one replaces it.
+        if (pendingDocument.current && reported?.split('#')[0] !== pendingDocument.current) {
+          syncRoute();
+          return;
+        }
+        pendingDocument.current = null;
         setReady(true);
         setSlow(false);
         sendTheme();
         syncRoute();
       } else if (message.type === 'route') {
         const path = studioPath(message.path, window.location.origin);
-        if (path) navigate(path, true);
+        if (path && (!pendingDocument.current || path.split('#')[0] === pendingDocument.current)) navigate(path, true);
       } else if (message.type === 'navigate') {
         const studio = studioPath(message.path, window.location.origin);
         if (studio) { navigate(studio); return; }
@@ -129,8 +148,13 @@ export function Studio({ connection = false }: { connection?: boolean }) {
     };
   }, []);
 
+  const connection = route.split(/[?#]/)[0] === '/studio/connect';
   const query = route.split('#')[0].split('?')[1];
   const active = connection ? '' : route.split('#')[1] || 'discussion';
+
+  useEffect(() => {
+    document.title = connection ? 'Postiz · Connexion Grok Bot' : 'Postiz · Studio IA';
+  }, [connection]);
 
   return (
     <div ref={host} className={styles.studio}>
