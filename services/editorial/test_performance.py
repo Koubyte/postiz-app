@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from performance import generate_report
+from performance import generate_report, _recommendations
 from store import Store, dumps
 
 
@@ -166,7 +166,7 @@ def test_rankings_require_same_account_format_metric_and_actual_difference(store
         api.analytics['/analytics/post/' + identifier] = [metric('Reactions', ('2026-10-28', str(count)))]
     result = generate_report(store, api, current=NOW)
     assert 'leader' in result['recommendations'][0]
-    assert '2 publications de même type déclaré' in result['recommendations'][0]
+    assert '2 publications de même format' in result['recommendations'][0]
     assert 'ancienneté' in result['recommendations'][0]
     assert 'video' not in result['recommendations'][0] and 'instagram' not in result['recommendations'][0]
     api.analytics['/analytics/post/second'] = [metric('Reactions', ('2026-10-28', 10))]
@@ -190,6 +190,26 @@ def test_invalid_duplicate_and_unknown_metrics_cannot_inflate_a_report(store):
     assert [value['value'] for value in result['channels'][0]['metrics']] == [10]
     assert result['posts'][0]['status'] == 'partial'
     assert [(value['key'], value['value']) for value in result['posts'][0]['metrics']] == [('clicks', 0)]
+
+
+@pytest.mark.parametrize('key,label,value', [('shares', 'Partages', 1), ('reactions', 'Réactions', 4)])
+def test_recommendations_use_human_topics_and_flag_few_interactions(key, label, value):
+    common = {'channel_id': 'fb', 'channel_name': 'Planète Laser', 'provider': 'facebook', 'format': 'post'}
+    posts = [
+        {**common, 'id': 'leader', 'title': 'Un nouveau piano en magasin', 'product': 'Hailun Pianova HD-300',
+         'angle': 'Sujet social ponctuel IDENTIFICATION Présenter la nouveauté confirmée Employer',
+         'metrics': [{'key': key, 'label': label, 'value': value}]},
+        {**common, 'id': 'other', 'title': 'Un autre conseil', 'product': None, 'angle': '',
+         'metrics': [{'key': key, 'label': label, 'value': 0}]},
+    ]
+    recommendation = _recommendations(posts, [])[0]
+    assert 'un autre conseil ou usage de « Hailun Pianova HD-300 »' in recommendation
+    assert 'volume reste faible' in recommendation and 'sans changer la stratégie' in recommendation
+    assert 'IDENTIFICATION' not in recommendation and 'Sujet social ponctuel' not in recommendation
+    posts[0]['product'] = None
+    recommendation = _recommendations(posts, [])[0]
+    assert recommendation.count('Un nouveau piano en magasin') == 1
+    assert 'sur ce sujet' in recommendation
 
 
 def test_report_is_readonly_ignores_ai_and_filters_secret_bearing_url(store):

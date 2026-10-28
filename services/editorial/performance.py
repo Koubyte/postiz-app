@@ -191,6 +191,15 @@ def _format(value):
             'story': 'story', 'stories': 'story', 'carousel': 'carousel'}.get(kind, 'unknown')
 
 
+def _topic(value, limit=100):
+    """Short human topic; operational drafting instructions are never used."""
+    text = _text(value, 10000)
+    if len(text) <= limit:
+        return text
+    shortened = text[:limit].rsplit(' ', 1)[0]
+    return shortened.rstrip(' ,;:–—-') + '…'
+
+
 def _recommendations(posts, channels):
     recommendations = []
     # Same account and format, same metric; no cross-network league table and
@@ -212,11 +221,16 @@ def _recommendations(posts, channels):
             continue
         if any(leader['id'] == seen[0] for seen in recommendations):
             continue
-        angle = leader['angle'] or leader['title']
+        topic = _topic(leader.get('product') or leader['title'])
+        title = _topic(leader['title'])
+        suggestion = (f'À tester : un autre conseil ou usage de « {topic} ».'
+                      if leader.get('product') and topic != title else 'À tester : un autre conseil ou un exemple d’utilisation sur ce sujet.')
+        caution = ('Le volume reste faible : cette piste demande confirmation sur d’autres publications, sans changer la stratégie sur ce seul résultat. '
+                   if metric['value'] < 10 else '')
         recommendations.append((leader['id'],
-            f"Sur {PROVIDERS[leader['provider']]} ({leader['channel_name']}), « {leader['title']} » a le plus de {metric['label'].lower()} "
-            f"parmi {len(entries)} publications de même type déclaré mesurées ({metric['value']}). "
-            f"Tester un nouveau contenu autour de « {angle[:180]} », puis comparer ; les cumuls dépendent aussi de l’ancienneté des posts."))
+            f"Sur {PROVIDERS[leader['provider']]} ({leader['channel_name']}), « {title} » a le plus de {metric['label'].lower()} "
+            f"parmi {len(entries)} publications de même format ({metric['value']}). "
+            f"{caution}{suggestion} Les cumuls dépendent aussi de l’ancienneté des posts."))
         if len(recommendations) >= 3:
             break
     result = [text for _, text in recommendations]
