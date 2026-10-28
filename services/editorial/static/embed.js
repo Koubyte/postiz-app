@@ -89,7 +89,14 @@
     // views in place, retaining the unsent brief and open conversation.
     const path = studio ? nativeStudioPath(next.href) : next.pathname + next.search + next.hash;
     if (link.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-      if (studio) link.href = path;
+      if (studio) {
+        const original = link.getAttribute('href');
+        link.href = path;
+        // Let the browser open the native URL, then retain relative anchors for
+        // later clicks after the selected conversation has changed.
+        const rewritten = link.href;
+        setTimeout(() => { if (link.href === rewritten) link.setAttribute('href', original); }, 0);
+      }
       return;
     }
     event.preventDefault();

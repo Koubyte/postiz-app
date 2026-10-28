@@ -40,7 +40,8 @@
 
 .tab:hover { color: var(--new-btn-text); }
 .tab[aria-current='page'] {
-  color: var(--new-btn-primary);
+  color: rgb(var(--new-textColor));
+  font-weight: 600;
   border-bottom-color: var(--new-btn-primary);
 }
 
