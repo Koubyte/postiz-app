@@ -1,0 +1,9 @@
+{
+  "name": "postiz-codex-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "test": "node --test *.test.mjs" },
+  "dependencies": { "@openai/codex": "0.163.0", "ajv": "8.20.0" },
+  "devDependencies": { "openai": "6.2.0" }
+}

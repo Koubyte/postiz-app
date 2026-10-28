@@ -1,0 +1,196 @@
+/* Focus the review on the final visual, copy and one explicit next action. */
+#item-dialog .review-heading {
+  gap: 12px;
+  margin-bottom: 20px;
+}
+#item-dialog .review-heading > div {
+  min-width: 0;
+  flex: 1;
+}
+#item-dialog .review-heading .eyebrow {
+  margin-bottom: 8px;
+}
+#item-dialog .review-heading h2 {
+  font-size: 25px;
+  line-height: 1.2;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.review-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#item-dialog .review-grid {
+  grid-template-columns: minmax(0, 350px) minmax(0, 1fr);
+}
+#item-dialog .review-media,
+#item-dialog .review-fields {
+  min-width: 0;
+}
+#item-dialog .review-media figure {
+  margin: 0 0 16px;
+}
+#item-dialog .review-media figure > a {
+  margin: 0;
+}
+#item-dialog .review-media img {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  object-fit: contain;
+}
+#item-dialog .review-media figcaption a {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.review-references {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 12px;
+}
+.review-references summary {
+  min-height: 44px;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+#item-dialog .review-references[open] summary {
+  margin-bottom: 12px;
+}
+#item-dialog .review-references .sources {
+  padding: 12px;
+}
+#item-dialog .review-timing-warning:not([hidden]) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-color: #635135;
+  background: #292318;
+  color: var(--warning);
+  margin: 0 0 20px;
+}
+.review-timing-warning > div {
+  flex: 1 1 240px;
+}
+.review-timing-warning strong {
+  display: block;
+  font-size: 13px;
+}
+.review-timing-warning p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+#item-dialog .review-footer .review-save,
+#item-dialog .review-footer.has-changes .review-approve {
+  display: none;
+}
+#item-dialog .review-footer.has-changes .review-save {
+  display: inline-flex;
+  background: var(--green);
+  border-color: var(--green);
+  color: #032216;
+}
+#item-dialog .review-fields input,
+#item-dialog .review-fields textarea,
+#item-dialog .review-fields select {
+  max-width: 100%;
+}
+#item-dialog .review-footer .button {
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 820px) {
+  #item-dialog .review-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  #item-dialog .review-media {
+    position: static;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+}
+@media (max-width: 520px) {
+  #item-dialog {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 16px;
+    border-radius: 12px;
+    scroll-padding-block: 18px 120px;
+  }
+  #item-dialog .review-heading {
+    margin-bottom: 16px;
+    gap: 8px;
+  }
+  #item-dialog .review-heading .eyebrow {
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  #item-dialog .review-heading h2 {
+    font-size: 20px;
+    line-height: 1.25;
+    margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #item-dialog .review-heading .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+  #item-dialog .review-meta {
+    font-size: 11px;
+    gap: 5px 8px;
+  }
+  #item-dialog .review-footer {
+    bottom: -16px;
+    margin: 24px -16px -16px;
+    padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+  }
+  #item-dialog .review-footer .hint {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  #item-dialog .review-footer .dialog-footer {
+    margin-top: 8px;
+    gap: 8px;
+  }
+  #item-dialog .review-footer .button {
+    flex: 1 1 auto;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  #item-dialog .review-footer .review-close {
+    display: none;
+  }
+  #item-dialog .review-footer .primary,
+  #item-dialog .review-footer .review-save {
+    flex: 3 1 auto;
+  }
+  #item-dialog .review-footer .danger {
+    flex: 1 1 auto;
+    border-color: var(--line);
+    background: transparent;
+  }
+  #item-dialog .review-fields input,
+  #item-dialog .review-fields textarea,
+  #item-dialog .review-fields select {
+    font-size: 16px;
+  }
+  #item-dialog .review-check {
+    font-size: 13px;
+    padding: 12px;
+  }
+}
