@@ -388,3 +388,23 @@ Tests: `test_watch.py`, `test_performance.py`, `test_strategy.py` and
 `test_strategy_review.py` cover real API shapes with mocked data, source recency,
 Paris/DST periods, deduplication, missing metrics, retry receipts, cadence,
 spacing, owner/CSRF access and absence of publication authority.
+
+
+### Native Postiz workspace
+
+The owner interface lives at `/studio` inside the native Postiz layout. The
+calendar, media library, settings, account controls and theme stay available
+while using Discussion, Contenus, Semaine and Idées. `/studio/connect` provides
+the Grok connection screen in the same layout.
+
+The native route hosts the editorial content document on the same origin with
+`embedded=1`; the document removes its standalone header, navigation and footer.
+Native theme tokens are shared with the document. Messages are accepted only
+from the expected parent/frame and the same origin. A small route allowlist
+prevents messages from navigating to arbitrary external URLs. The iframe has
+microphone access for the existing voice workflow.
+
+Existing `/editorial/` and `/editorial/connect` browser links lead to the native
+workspace, retaining conversation/item query parameters and view fragments.
+The `/editorial/api`, `/editorial/agent`, media and public article URLs are
+unchanged. There is no new publication path or change to content approvals.

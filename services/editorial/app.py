@@ -387,10 +387,10 @@ async def binary_body(request,limit):
 
 @app.get('/editorial/api/conversations')
 async def conversations(request:Request):
-    await actor(request)
+    who=await actor(request)
     with store.db() as db:
         rows=[dict(r) for r in db.execute('SELECT * FROM conversations ORDER BY created DESC LIMIT 100')]
-    return {'conversations':rows,'voice':bool(os.environ.get('TRANSCRIPTION_URL')),'spacing_minutes':120}
+    return {'conversations':rows,'voice':bool(os.environ.get('TRANSCRIPTION_URL')),'spacing_minutes':120,'owner_id':who}
 
 @app.post('/editorial/api/conversations')
 async def new_conversation(request:Request):

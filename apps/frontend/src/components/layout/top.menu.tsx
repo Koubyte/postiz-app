@@ -23,8 +23,7 @@ export const useMenuItem = () => {
   const firstMenu = [
     {
       name: 'Studio IA',
-      path: '/editorial/',
-      onClick: () => window.location.assign('/editorial/#discussion'),
+      path: '/studio',
       icon: (
         <svg width="23" height="23" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" strokeWidth="1.6" />
