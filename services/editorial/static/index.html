@@ -8,9 +8,11 @@
     <link rel="stylesheet" href="/editorial/static/style.css?v=contents-1" />
     <link rel="stylesheet" href="/editorial/static/contents.css?v=1" />
     <link rel="stylesheet" href="/editorial/static/review.css?v=1" />
+    <link rel="stylesheet" href="/editorial/static/strategy.css?v=1" />
     <script src="/editorial/static/app.js" defer></script>
     <script src="/editorial/static/chat.js?v=contents-1" defer></script>
     <script src="/editorial/static/contents.js?v=1" defer></script>
+    <script src="/editorial/static/strategy.js?v=1" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Aller au contenu</a>
@@ -22,8 +24,9 @@
     <nav class="postiz-navigation" aria-label="Postiz">
       <a href="/launches" aria-label="Calendrier Postiz">Calendrier</a>
       <a href="#discussion" data-studio-view="discussion">Discussion</a>
-      <a href="#contenus" data-studio-view="contenus">Mes contenus</a>
-      <a href="#semaine" data-studio-view="semaine">La semaine</a>
+      <a href="#contenus" data-studio-view="contenus" aria-label="Mes contenus"><span class="studio-nav-desktop">Mes contenus</span><span class="studio-nav-mobile" aria-hidden="true">Contenus</span></a>
+      <a href="#semaine" data-studio-view="semaine" aria-label="La semaine"><span class="studio-nav-desktop">La semaine</span><span class="studio-nav-mobile" aria-hidden="true">Semaine</span></a>
+      <a href="#strategie" data-studio-view="strategie" aria-label="Développer"><span class="studio-nav-desktop">Développer</span><span class="studio-nav-mobile" aria-hidden="true">Idées</span></a>
     </nav>
     <dialog id="studio-menu" class="studio-menu" aria-labelledby="studio-menu-title">
       <div class="dialog-heading"><h2 id="studio-menu-title">Studio IA</h2><button type="button" class="studio-icon close-dialog" aria-label="Fermer le menu"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
@@ -31,6 +34,7 @@
         <a href="#discussion" id="tab-chat">Discussion</a>
         <a href="#contenus" id="tab-contents">Mes contenus</a>
         <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
+        <a href="#strategie" id="tab-strategy">Idées &amp; campagnes</a>
         <a href="/launches">Calendrier Postiz</a>
         <a href="/media">Médias Postiz</a>
         <a href="/settings">Réglages Postiz</a>
@@ -54,6 +58,36 @@
         <a class="button primary" href="/auth/login">Se connecter</a>
       </section>
       <section id="workspace" aria-busy="true">
+        <section id="strategy-panel" hidden aria-labelledby="strategy-title">
+          <div class="strategy-heading"><h1 id="strategy-title">Idées &amp; campagnes</h1><p class="muted">De nouveaux sujets, les résultats et des campagnes à préparer.</p></div>
+          <div class="strategy-tabs" role="tablist" aria-label="Développer la communication">
+            <button type="button" id="strategy-tab-watch" role="tab" aria-controls="strategy-watch" aria-selected="true" data-strategy-tab="watch">Veille</button>
+            <button type="button" id="strategy-tab-performance" role="tab" aria-controls="strategy-performance" aria-selected="false" tabindex="-1" data-strategy-tab="performance">Bilan</button>
+            <button type="button" id="strategy-tab-campaigns" role="tab" aria-controls="strategy-campaigns" aria-selected="false" tabindex="-1" data-strategy-tab="campaigns">Campagnes</button>
+          </div>
+          <div id="strategy-error" class="notice error" role="alert" hidden></div>
+          <p id="strategy-loading" class="hint" role="status">Chargement…</p>
+          <section id="strategy-watch" role="tabpanel" aria-labelledby="strategy-tab-watch">
+            <div class="strategy-section-heading"><div><h2>Des idées pour le magasin</h2><p id="strategy-watch-cadence" class="hint"></p></div><button type="button" id="strategy-watch-refresh" class="button secondary">Rechercher maintenant</button></div>
+            <div id="strategy-watch-body"></div>
+          </section>
+          <section id="strategy-performance" role="tabpanel" aria-labelledby="strategy-tab-performance" hidden>
+            <div class="strategy-section-heading"><div><h2>Ce qui fonctionne</h2><p id="strategy-performance-cadence" class="hint"></p></div><button type="button" id="strategy-performance-refresh" class="button secondary">Actualiser le bilan</button></div>
+            <div id="strategy-performance-body"></div>
+          </section>
+          <section id="strategy-campaigns" role="tabpanel" aria-labelledby="strategy-tab-campaigns" hidden>
+            <form id="strategy-campaign-form" class="strategy-card strategy-campaign-form">
+              <h2>Préparer une campagne</h2>
+              <label for="strategy-campaign-brief">Votre objectif<textarea id="strategy-campaign-brief" rows="3" required maxlength="6000" placeholder="Ex. Faire découvrir nos pianos pour débutants, avec des conseils et une invitation à les essayer au magasin."></textarea></label>
+              <div class="strategy-form-grid"><label for="strategy-campaign-start">Du<input id="strategy-campaign-start" type="date" required /></label><label for="strategy-campaign-end">Au<input id="strategy-campaign-end" type="date" required /></label><label for="strategy-campaign-count">Nombre de posts<select id="strategy-campaign-count"><option value="3">3 posts</option><option value="4">4 posts</option><option value="5">5 posts</option><option value="6">6 posts</option><option value="7">7 posts</option></select></label></div>
+              <label class="strategy-check"><input id="strategy-campaign-blog" type="checkbox" />Ajouter un article de blog à la campagne</label>
+              <p class="hint">Le plan propose des horaires en heure de Paris, en complément des 7 posts hebdomadaires. Vous choisissez ensuite de préparer les brouillons, puis validez chaque post avant publication.</p>
+              <button type="submit" id="strategy-campaign-create" class="button primary">Proposer un plan</button>
+            </form>
+            <h2 class="strategy-list-title">Vos campagnes</h2>
+            <div id="strategy-campaign-list" class="strategy-stack"></div>
+          </section>
+        </section>
         <section id="contents-panel" hidden aria-labelledby="contents-title">
           <div class="contents-heading">
             <div><h1 id="contents-title">Mes contenus</h1><p class="muted">La semaine, les demandes ponctuelles et le blog, au même endroit.</p></div>

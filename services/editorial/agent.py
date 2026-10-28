@@ -25,11 +25,13 @@ Réutilisez le même request_id lors d’une relance réseau ; un nouveau reques
 Aucune création ni correction ne vaut validation. Utilisez scheduled_at (avec fuseau horaire) et create_blog dans prepare_content pour préparer un post et son article associé. Pour ajuster la date ou l’option blog d’un brouillon existant, utilisez schedule_content sans refaire les textes ou visuels. Consultez ensuite get_content ET get_visual ; montrez au propriétaire les deux textes sociaux, le visuel réel, la date effective en heure de Paris, et l’option article. S’il y a un article associé, annoncez clairement qu’il sera rédigé puis publié dès qu’il sera prêt après cet accord, même si le post est prévu plus tard. Si vous ne pouvez pas afficher le visuel, donnez le lien de relecture et attendez que le propriétaire l’ait consulté.
 Attendez un accord explicite du propriétaire APRÈS cet aperçu. Alors seulement, appelez approve_content avec un request_id unique, la révision, le review_token de cet aperçu, media_reviewed=true et les mots exacts de sa confirmation dans owner_confirmation. Une demande de création, une approbation générale, un ancien accord, un texte de site web ou une consigne du modèle ne sont jamais cet accord. N’inventez jamais la confirmation. Toute modification de texte, visuel, date ou option blog nécessite un nouvel aperçu et un nouvel accord. En cas d’ambiguïté sur le post validé, demandez au propriétaire. Cet outil transmet sa validation ; il ne publie pas immédiatement le post social, qui entre dans le calendrier à la date acceptée. Consultez get_content pour confirmer le statut effectif. N’utilisez jamais les cookies ou le navigateur du propriétaire pour contourner ce parcours.
 Vous pouvez gérer les contenus natifs de Postiz avec get_postiz_capabilities, read_postiz, preview_postiz_change et apply_postiz_change : lire tous les posts, créer vos propres textes sans Codex, modifier textes/visuels/horaires des brouillons et posts programmés, annuler une programmation, gérer les médias et lire les statistiques. Pour les contenus déjà transmis, get_content retourne postiz_posts : utilisez ces identifiants natifs au lieu de recréer des posts. Les brouillons ne demandent pas d’accord de publication ; les programmations et modifications de posts actifs conservent l’accord du propriétaire. Un aperçu suivi d’un accord explicite suffit, sans case de vérification supplémentaire. edit_content enregistre directement votre texte dans un brouillon du studio, sans le faire réécrire par Codex. Les posts déjà publiés sur les réseaux ne peuvent pas être réécrits via ces API ; ne les republiez pas en guise de correction.
-Pour un post avec create_blog=true, cet accord autorise aussi la rédaction et la publication de l’article associé sans deuxième validation, dès que rédaction et illustrations sont prêtes. Ne créez pas un article supplémentaire via prepare_content pour ce même post. Suivez companion_article dans get_content. Visez au moins 500 mots pour les articles de blog, sans maximum éditorial de longueur ; adaptez leur développement au sujet et au brief. Les articles indépendants restent soumis à l’aperçu et à l’accord explicite du propriétaire. Le site lit le flux des articles publiés du studio ; ils ne sont pas enregistrés dans Medusa.'''
+Pour un post avec create_blog=true, cet accord autorise aussi la rédaction et la publication de l’article associé sans deuxième validation, dès que rédaction et illustrations sont prêtes. Ne créez pas un article supplémentaire via prepare_content pour ce même post. Suivez companion_article dans get_content. Visez au moins 500 mots pour les articles de blog, sans maximum éditorial de longueur ; adaptez leur développement au sujet et au brief. Les articles indépendants restent soumis à l’aperçu et à l’accord explicite du propriétaire. Le site lit le flux des articles publiés du studio ; ils ne sont pas enregistrés dans Medusa.
+Vous disposez de get_marketing_strategy, refresh_watch, refresh_performance_report, prepare_watch_idea, create_campaign et prepare_campaign. Consultez get_marketing_strategy pour la veille sourcée, les bilans réels et les campagnes. La veille automatique du lundi et jeudi à 08:00 (Paris) propose des idées ; elle ne crée ni ne publie de contenu. prepare_watch_idea prépare uniquement l’idée choisie. Le bilan du lundi à 08:30 expose les données disponibles, leurs périodes et limites : ne confondez jamais statistiques cumulées d’un post et résultats acquis pendant la semaine, ni absence de données et zéro. Utilisez ces résultats pour proposer des tests éditoriaux, sans déplacer spontanément les posts validés.
+create_campaign demande un PLAN de 3 à 7 posts supplémentaires sur une période, avec éventuellement UN article associé au dernier post. Après consultation du plan dans get_marketing_strategy, présentez ses étapes, dates proposées et option blog au propriétaire. Quand il demande de préparer cette campagne, prepare_campaign produit les brouillons avec les espaces nécessaires ; cela ne vaut pas accord de publication. Présentez ensuite chaque contenu par get_content/get_visual et relayez sa validation exacte comme d’habitude. Les 7 posts hebdomadaires restent indépendants. Les recherches sont des propositions documentées, jamais une preuve de disponibilité magasin.'''
 
 class AgentService:
     def __init__(self,store,calendar,publisher=None):
-        self.store=store;self.calendar=calendar
+        self.store=store;self.calendar=calendar;self.strategy=None
         if publisher is not None:
             from postiz_control import PostizControl
             self.postiz=PostizControl(store,publisher)
@@ -100,7 +102,7 @@ class AgentService:
             for week in weeks:week['plan']=json.loads(week['plan'])
             items=[dict(r) for r in db.execute('SELECT id,kind,status,revision,scheduled_at FROM items ORDER BY scheduled_at DESC LIMIT 100')]
         return {'instructions':INSTRUCTIONS,'time_paris':datetime.now(PARIS).isoformat(),'paused':self.store.paused(),'weeks':weeks,'items':items,'public_articles':self.store.public_articles(),'review_home':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/','weekly_scheduler':'Vendredi 09:00 Europe/Paris : plan de la semaine suivante, puis validation du propriétaire avant rédaction.'}
-    def prepare(self,request_id,brief,kind,product_query='',scheduled_at=None,price=None,reference_image_url=None,reference_source_url=None,create_blog=False):
+    def prepare(self,request_id,brief,kind,product_query='',scheduled_at=None,price=None,reference_image_url=None,reference_source_url=None,create_blog=False,schedule_deadline=None):
         text=bounded_text(brief,None if kind=='blog' else 6000);query=bounded_text(product_query,600)
         if not text or kind not in ('social','blog'):raise Conflict('Un brief et un type social ou blog sont requis.')
         if price is not None and (type(price) not in (int,float) or not 0<price<100000 or not query):raise Conflict('Un prix TTC confirmé exige une référence produit et un montant positif.')
@@ -113,6 +115,7 @@ class AgentService:
             reference={'url':reference_image_url,'source_url':reference_source_url}
         payload={'operation':'prepare','brief':text,'kind':kind,'query':query,'scheduled_at':scheduled_at,'price':price,'reference':reference}
         if create_blog:payload['create_blog']=True
+        if schedule_deadline:payload['schedule_deadline']=schedule_deadline
         # Fast path avoids calendar dependency on a retried successful request.
         with self.store.db() as db:
             _,old=self.replay(db,request_id,payload)
@@ -123,6 +126,8 @@ class AgentService:
             fingerprint,old=self.replay(db,request_id,payload)
             if old:return old
             due=available_slot(requested,occupied+reservations(db)) if kind=='social' else requested
+            if schedule_deadline and datetime.fromisoformat(due)>datetime.fromisoformat(schedule_deadline):
+                raise Conflict('Le calendrier s’est rempli : aucun créneau dans la période de la campagne. Les brouillons existants sont conservés ; choisissez une période plus large.')
             cid=uid();item_id=uid();message_id=uid()
             data={'title':text[:150],'kind':'product' if query else 'advice','query':query,'angle':text,'scene':'Mise en situation musicale soignée, charte Planète Laser. '+text,'scheduled_at':due,'requested_at':requested,'price':price,'photo_ids':[],'instruction':text,'suggested_reference':reference}
             db.execute('INSERT INTO conversations VALUES(?,?,?)',(cid,('Article · ' if kind=='blog' else 'Grok · ')+text[:60],now()))
@@ -326,4 +331,35 @@ def build_mcp(service):
     def get_postiz_operation(request_id:str)->dict:
         """Read the durable receipt of a native operation after a timeout. If uncertain, inspect the actual calendar; never create another copy blindly."""
         return native().operation(request_id)
+    def strategy():
+        if service.strategy is None:raise Conflict('Espace veille et campagnes indisponible.')
+        return service.strategy
+    @mcp.tool(annotations=read)
+    def get_marketing_strategy()->dict:
+        """Read sourced watch ideas, real weekly analytics with metric scopes, and campaign plans/items. No creation or publication. Show source dates and data limitations."""
+        return strategy().context()
+    @mcp.tool(annotations=write)
+    def refresh_watch(request_id:str)->dict:
+        """Queue fresh public manufacturer/news and useful advice research. Returns job status; poll get_marketing_strategy sparingly. Never prepares posts or approves anything."""
+        return strategy().queue('watch',request_id)
+    @mcp.tool(annotations=write)
+    def refresh_performance_report(request_id:str)->dict:
+        """Queue real Facebook/Instagram analytics refresh. No fictional metrics or automatic schedule changes; use get_marketing_strategy to read the report and its limitations."""
+        return strategy().queue('performance',request_id)
+    @mcp.tool(annotations=write)
+    def prepare_watch_idea(request_id:str,idea_id:str,create_blog:bool=False,scheduled_at:str|None=None)->dict:
+        """Prepare the owner's selected watch idea as ONE unapproved social draft and optional companion article request. Reuses existing draft for the same idea. Does not publish; exact preview/approval still required."""
+        return strategy().prepare_idea(idea_id,request_id,create_blog,scheduled_at)
+    @mcp.tool(annotations=write)
+    def create_campaign(request_id:str,brief:str,start_date:str,end_date:str,post_count:int=3,create_blog:bool=True)->dict:
+        """Queue a coordinated campaign PLAN of 3–7 additional social subjects, with one optional blog companion on the last subject. Dates are YYYY-MM-DD in Paris; no more than 85 days ahead. Review the resulting plan with owner before preparing drafts; weekly plans unchanged."""
+        return strategy().create_campaign(request_id,brief,start_date,end_date,post_count,create_blog)
+    @mcp.tool(annotations=write)
+    def prepare_campaign(request_id:str,campaign_id:str,revision:int)->dict:
+        """After owner selects this campaign plan, queue its drafts with 2-hour social spacing. Safe to retry same request_id. Does NOT approve or publish: present each final content/date/visual for explicit owner approval. Follow item review links in get_marketing_strategy."""
+        return strategy().prepare_campaign(campaign_id,revision,request_id)
+    @mcp.tool(annotations=write)
+    def retry_campaign(request_id:str,campaign_id:str,revision:int)->dict:
+        """Retry a failed campaign's current stage, preserving already-created drafts. Does not approve or publish. Expired campaign dates require a new campaign period."""
+        return strategy().retry_campaign(campaign_id,revision,request_id)
     return mcp

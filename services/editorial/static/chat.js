@@ -17,19 +17,22 @@ function showCorrection() {
   $('chat-correction-label').textContent=target.selectedOptions[0]?.textContent || '';
 }
 function chatMode() {
-  const view=location.hash==='#semaine'?'semaine':location.hash==='#contenus'?'contenus':'discussion';
+  const view=location.hash==='#semaine'?'semaine':location.hash==='#contenus'?'contenus':location.hash==='#strategie'?'strategie':'discussion';
   const active=view==='discussion';
   document.body.classList.toggle('chat-mode',active);
   $('chat-panel').hidden=!active; $('weekly-panel').hidden=view!=='semaine'; $('contents-panel').hidden=view!=='contenus';
+  $('strategy-panel').hidden=view!=='strategie';
   $('tab-chat').setAttribute('aria-current',active?'page':'false');
   $('tab-week').setAttribute('aria-current',view==='semaine'?'page':'false');
   $('tab-contents').setAttribute('aria-current',view==='contenus'?'page':'false');
+  $('tab-strategy').setAttribute('aria-current',view==='strategie'?'page':'false');
   document.querySelectorAll('[data-studio-view]').forEach(link=>{
     if(link.dataset.studioView===view)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   });
   if(active) refreshChat();
   if(view==='contenus')window.refreshContents?.();
+  if(view==='strategie')window.refreshStrategy?.();
   $('studio-menu').close();
 }
 async function loadDiscussions() {
@@ -228,4 +231,4 @@ window.visualViewport?.addEventListener('resize',fitChatViewport);
 window.addEventListener('resize',fitChatViewport);fitChatViewport();
 window.addEventListener('hashchange',chatMode);
 chatMode();
-setInterval(()=>{if(!document.hidden&&!['#semaine','#contenus'].includes(location.hash))refreshChat();},5000);
+setInterval(()=>{if(!document.hidden&&!['#semaine','#contenus','#strategie'].includes(location.hash))refreshChat();},5000);

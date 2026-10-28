@@ -60,7 +60,7 @@ projections. Draft/source/generated media require the owner's session. Only the 
 published article cover is available from `/editorial/public/media/...`.
 The storefront merges this feed with its two historical guides. Social posts do
 not automatically link an unpublished article; they are useful standalone
-adaptations. Statistics-driven topic optimization is not part of this version.
+adaptations. Performance recommendations are available in the private strategy area; no existing schedule is changed by a report.
 
 Product images use reference-guided generation through the Codex OAuth image
 bridge. The exact product photograph is supplied to the generator to create a
@@ -177,7 +177,7 @@ The setup page provides the complete French bot instructions and last-use status
 Do not paste the token into chat, source files, URLs or logs.
 
 The MCP SDK serves stateless Streamable HTTP at `/editorial/agent/mcp`, behind a
-separate bearer gate. It exposes eight tools:
+separate bearer gate. Its original content tools are:
 `get_editorial_context`, `get_content`, `get_visual`, `prepare_content`,
 `revise_content`, `prepare_week`, `schedule_content` and `approve_content`.
 It has no arbitrary HTTP, shell, filesystem or administrative tool. Its token cannot authenticate
@@ -341,3 +341,50 @@ edit_content saves Grok's exact text into a studio draft (including an approved
 item not yet delivered) without Codex rewriting. It invalidates prior consent.
 Text-only changes preserve images; visual-title changes render new images.
 Calendar, studio, media and settings links remain visible above the mobile chat.
+
+
+## Watch, weekly performance and coordinated campaigns
+
+`/editorial/#strategie` (Développer / Idées on mobile) provides three private tabs:
+Veille, Bilan and Campagnes. The same owner session/CSRF and Grok bearer boundaries
+apply. The private strategy tables use the existing persistent SQLite volume.
+
+- Monday and Thursday at **08:00 Europe/Paris**, a durable watch job searches
+  manufacturer news and seasonal advice. Up to five real public pages are read;
+  a recent news date must come from page metadata, not a model assertion. Ideas
+  retain sources and dates. Unverifiable evidence yields an explicit empty result.
+  Selecting an idea prepares one unapproved social draft, with optional companion
+  blog request. Stable IDs and durable receipts prevent duplicate selection.
+- Monday at **08:30 Europe/Paris**, a read-only performance job analyzes posts
+  from the previous complete Monday–Sunday Paris week, including native Postiz
+  posts. Meta account endpoints provide a rolling seven-day window; post endpoints
+  provide lifetime snapshots. These scopes stay separate. Missing metrics are not
+  zeros, provider placeholder percentage changes are ignored, and recommendations
+  compare only the same account, format and metric. No attribution or causal claim
+  is inferred. Reports do not move or approve posts.
+- A campaign brief proposes **3–7 additional social subjects** across the selected
+  Paris dates, independently from the seven weekly subjects. The owner chooses
+  whether to prepare the plan's drafts. Each final post still needs its exact
+  content/visual/date approval. An optional single companion article belongs to
+  the last post and follows the existing immediate-after-approval publication path.
+  Native and studio reservations enforce two-hour spacing; a new conflict never
+  silently pushes a draft past the campaign end date. Per-step receipts survive
+  interrupted batch creation without duplicating earlier drafts.
+
+The scheduler catches up only the latest due slot after installation/restart,
+using unique persistent keys. Global studio pause also stops strategy preparation.
+Manual watch/report refresh shares active work, while preserving the last report
+on screen. Failed campaign stages can be retried; already-created drafts remain.
+An expired campaign period requires a new campaign with future dates.
+
+Grok's additional tools: `get_marketing_strategy`, `refresh_watch`,
+`refresh_performance_report`, `prepare_watch_idea`, `create_campaign`,
+`prepare_campaign`, `retry_campaign`. These create proposals/drafts only. The
+existing `get_content` / `get_visual` / `approve_content` approval relay remains
+required for publication. No new secret or Grok reconnect is required, though a
+client that caches its MCP tool list may need to refresh that list.
+
+Tests: `test_watch.py`, `test_performance.py`, `test_strategy.py` and
+`test_strategy_review.py` cover real API shapes with mocked data, source recency,
+Paris/DST periods, deduplication, missing metrics, retry receipts, cadence,
+spacing, owner/CSRF access and absence of publication authority.

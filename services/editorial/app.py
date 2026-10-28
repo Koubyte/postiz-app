@@ -19,6 +19,7 @@ from companion import Companion
 from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
 from spacing import calendar_times as read_calendar, reservations, available_slot
 from overview import list_contents, content_detail
+from strategy import Strategy, JOBS as STRATEGY_JOBS
 
 ROOT=Path(__file__).parent
 store=Store(os.environ.get('EDITORIAL_DATA','/data'))
@@ -31,6 +32,8 @@ stop=threading.Event()
 def calendar_times(exclude_ids=()):return read_calendar(publisher,exclude_ids)
 
 agent_service=AgentService(store,calendar_times,publisher)
+strategy=Strategy(store,generator,publisher,agent_service)
+agent_service.strategy=strategy
 agent_mcp=build_mcp(agent_service)
 agent_asgi=BearerGate(agent_mcp.streamable_http_app(),agent_service)
 
@@ -45,11 +48,13 @@ def work(chat_only=False):
             if not row:continue
             job=dict(row)
             db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?",(now(),job['id']))
+            if job['kind'] in STRATEGY_JOBS:strategy.started(db,job['kind'],job['target'])
             if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
             if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
             if job['kind'] in ('draft','demand','companion'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
-            {'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
+            if job['kind'] in STRATEGY_JOBS:strategy.run(job['kind'],job['target'])
+            else:{'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -59,7 +64,9 @@ def work(chat_only=False):
                 # Bounded retries for generation only. Publishing is a separate path.
                 retry=job['attempts']<1
                 db.execute('UPDATE jobs SET status=?,updated=? WHERE id=?',('queued' if retry else 'failed',now(),job['id']))
-                if job['kind']=='chat':
+                if job['kind'] in STRATEGY_JOBS:
+                    strategy.failed(db,job['kind'],job['target'],message,retry)
+                elif job['kind']=='chat':
                     db.execute('UPDATE messages SET status=?,error=? WHERE id=?',('queued' if retry else 'failed',message,job['target']))
                 elif job['kind']=='revise':
                     if not retry:store.fail_revision(db,job['target'],message)
@@ -76,6 +83,9 @@ def schedule():
     count=0
     while not stop.wait(15):
         if store.paused():continue
+        # Catch up the current due slot once; these jobs only research/read or draft.
+        try:strategy.tick()
+        except Conflict:pass  # Pause or a full queue can be retried next tick.
         local=datetime.now(timezone.utc).astimezone(PARIS)
         if local.weekday()>4 or (local.weekday()==4 and local.hour>=9):store.prepare()
         with store.db() as db:due=[r[0] for r in db.execute("SELECT id FROM items WHERE status='approved' AND (kind='social' OR scheduled_at<=?) ORDER BY scheduled_at",(now(),))]
@@ -92,6 +102,7 @@ def schedule():
 @asynccontextmanager
 async def lifespan(app):
     store.recover()
+    strategy.recover()
     threads=[]
     if os.environ.get('EDITORIAL_WORKER','true')=='true':
         # One process per persistent store; no duplicate workers across uvicorn instances.
@@ -223,6 +234,37 @@ async def contents(request:Request,q:str=Query('',max_length=1000),filter:str='a
 async def content(id:str,request:Request):
     await actor(request)
     return content_detail(store,id)
+
+@app.get('/editorial/api/strategy')
+async def strategy_context(request:Request):
+    await actor(request)
+    return strategy.context()
+
+@app.post('/editorial/api/strategy/watch')
+@app.post('/editorial/api/strategy/report')
+async def strategy_refresh(request:Request):
+    await actor(request);data=await body(request)
+    return strategy.queue('watch' if request.url.path.endswith('/watch') else 'performance',data.get('request_id'))
+
+@app.post('/editorial/api/strategy/ideas/{id}/prepare')
+async def strategy_idea(id:str,request:Request):
+    await actor(request);data=await body(request)
+    return await asyncio.to_thread(strategy.prepare_idea,id,data.get('request_id'),data.get('create_blog',False),data.get('scheduled_at'))
+
+@app.post('/editorial/api/strategy/campaigns')
+async def strategy_campaign(request:Request):
+    await actor(request);data=await body(request)
+    return strategy.create_campaign(data.get('request_id'),data.get('brief'),data.get('start_date'),data.get('end_date'),data.get('post_count',3),data.get('create_blog',True))
+
+@app.post('/editorial/api/strategy/campaigns/{id}/prepare')
+async def strategy_campaign_prepare(id:str,request:Request):
+    await actor(request);data=await body(request)
+    return strategy.prepare_campaign(id,data.get('revision'),data.get('request_id'))
+
+@app.post('/editorial/api/strategy/campaigns/{id}/retry')
+async def strategy_campaign_retry(id:str,request:Request):
+    await actor(request);data=await body(request)
+    return strategy.retry_campaign(id,data.get('revision'),data.get('request_id'))
 
 @app.post('/editorial/api/prepare')
 async def prepare(request:Request):
