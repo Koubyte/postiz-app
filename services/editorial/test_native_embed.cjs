@@ -55,6 +55,31 @@ test('unknown destinations and malformed URLs ignored without throw',()=>{const 
 test('parent query navigation replaces child entry and preserves review link',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');h.message({type:'route',path:'/editorial/?conversation=c2&item=i2&embedded=1#discussion'});assert.equal(h.changed[0].kind,'replace');assert.equal(new URL(h.location.href).searchParams.get('item'),'i2');});
 test('parent hash navigation replaces child entry and dispatches hashchange',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');let changes=0;h.win.addEventListener('hashchange',()=>changes++);h.message({type:'route',path:'/editorial/?embedded=1#semaine'});assert.equal(h.location.hash,'#semaine');assert.equal(h.changed[0].kind,'replaceState');assert.equal(changes,1);});
 test('parent unchanged route causes no navigation',()=>{const h=harness(origin+'/editorial/?embedded=1&conversation=c1#discussion');h.message({type:'route',path:'/editorial/?conversation=c1&embedded=1#discussion'});assert.equal(h.changed.length,0);});
+test('root slash aliases do not reload an unchanged child after a cached redirect',()=>{
+  for(const [current,next] of [['/editorial','/editorial/'],['/editorial/','/editorial']]){
+    const h=harness(origin+current+'?embedded=1&conversation=c1#contenus');
+    for(let i=0;i<3;i++)h.message({type:'route',path:next+'?conversation=c1&embedded=1#contenus'});
+    assert.equal(h.changed.length,0);
+    assert.equal(new URL(h.location.href).pathname,current);
+  }
+});
+test('root alias hash navigation retains the loaded document without a reload',()=>{
+  const h=harness(origin+'/editorial?embedded=1&conversation=c1#discussion');
+  let changes=0;h.win.addEventListener('hashchange',()=>changes++);
+  h.message({type:'route',path:'/editorial/?conversation=c1&embedded=1#contenus'});
+  assert.equal(h.changed.length,1);
+  assert.equal(h.changed[0].kind,'replaceState');
+  assert.equal(new URL(h.location.href).pathname,'/editorial');
+  assert.equal(h.location.hash,'#contenus');
+  assert.equal(changes,1);
+});
+test('root alias still reloads when the selected discussion changes',()=>{
+  const h=harness(origin+'/editorial?embedded=1&conversation=c1#discussion');
+  h.message({type:'route',path:'/editorial/?conversation=c2&embedded=1#discussion'});
+  assert.equal(h.changed.length,1);
+  assert.equal(h.changed[0].kind,'replace');
+  assert.equal(new URL(h.location.href).searchParams.get('conversation'),'c2');
+});
 test('native links delegate to parent instead of nesting Postiz',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');for(const href of ['/launches','/media','/settings','/auth/login']){assert(h.click(href).prevented);assert.equal(h.posts.at(-1).message.type,'navigate');assert.equal(h.posts.at(-1).message.path,href);}assert.equal(h.changed.length,0);});
 test('studio deep links delegate canonical route preserving query/hash',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');assert(h.click('/editorial/?conversation=c1&item=i1#discussion').prevented);assert.equal(h.posts.at(-1).message.path,'/studio?conversation=c1&item=i1#discussion');});
 test('view hash links delegate parent to avoid child history entry',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');assert(h.click('#contenus').prevented);assert.equal(h.posts.at(-1).message.path,'/studio#contenus');assert.equal(h.changed.length,0);});

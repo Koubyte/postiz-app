@@ -48,11 +48,15 @@
       const current = new URL(location.href);
       current.searchParams.sort();
       next.searchParams.sort();
-      if (next.pathname !== current.pathname || next.search !== current.search) {
+      // Both root aliases serve the same document. A cached native redirect can
+      // remove the slash before this bridge loads; do not reload it forever.
+      const currentPath = current.pathname === '/editorial/' ? '/editorial' : current.pathname;
+      const nextPath = next.pathname === '/editorial/' ? '/editorial' : next.pathname;
+      if (nextPath !== currentPath || next.search !== current.search) {
         location.replace(next.pathname + next.search + next.hash);
       } else if (next.hash !== location.hash) {
         const previous = location.href;
-        history.replaceState(history.state, '', next.pathname + next.search + next.hash);
+        history.replaceState(history.state, '', current.pathname + next.search + next.hash);
         window.dispatchEvent(new HashChangeEvent('hashchange', {oldURL: previous, newURL: location.href}));
       }
     }
