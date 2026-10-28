@@ -67,18 +67,27 @@ test('root alias hash navigation retains the loaded document without a reload',(
   const h=harness(origin+'/editorial?embedded=1&conversation=c1#discussion');
   let changes=0;h.win.addEventListener('hashchange',()=>changes++);
   h.message({type:'route',path:'/editorial/?conversation=c1&embedded=1#contenus'});
+  h.message({type:'route',path:'/editorial/?conversation=c1&embedded=1#contenus'});
   assert.equal(h.changed.length,1);
   assert.equal(h.changed[0].kind,'replaceState');
   assert.equal(new URL(h.location.href).pathname,'/editorial');
   assert.equal(h.location.hash,'#contenus');
   assert.equal(changes,1);
 });
-test('root alias still reloads when the selected discussion changes',()=>{
+test('root alias reloads once for a changed review even with another cached redirect',()=>{
   const h=harness(origin+'/editorial?embedded=1&conversation=c1#discussion');
-  h.message({type:'route',path:'/editorial/?conversation=c2&embedded=1#discussion'});
+  const route={type:'route',path:'/editorial/?conversation=c2&item=i2&embedded=1#discussion'};
+  h.message(route);
   assert.equal(h.changed.length,1);
   assert.equal(h.changed[0].kind,'replace');
   assert.equal(new URL(h.location.href).searchParams.get('conversation'),'c2');
+  // Recreate the child document as the browser would after its cached 308.
+  const redirected=new URL(h.location.href);redirected.pathname='/editorial';
+  const after=harness(redirected.href);
+  after.document.dispatchEvent({type:'DOMContentLoaded'});
+  after.message(route);after.message(route);
+  assert.equal(after.changed.length,0);
+  assert.equal(new URL(after.location.href).searchParams.get('item'),'i2');
 });
 test('native links delegate to parent instead of nesting Postiz',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');for(const href of ['/launches','/media','/settings','/auth/login']){assert(h.click(href).prevented);assert.equal(h.posts.at(-1).message.type,'navigate');assert.equal(h.posts.at(-1).message.path,href);}assert.equal(h.changed.length,0);});
 test('studio deep links delegate canonical route preserving query/hash',()=>{const h=harness(origin+'/editorial/?embedded=1#discussion');assert(h.click('/editorial/?conversation=c1&item=i1#discussion').prevented);assert.equal(h.posts.at(-1).message.path,'/studio?conversation=c1&item=i1#discussion');});
