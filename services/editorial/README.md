@@ -1,5 +1,23 @@
 # Planète Laser editorial studio
 
+The **Mes contenus** view at `/editorial/#contenus` gathers weekly subjects,
+on-demand posts and companion articles. Its private owner-only `/api/contents`
+index supports accent-insensitive text search, status filters, global counts and
+paging; `/api/contents/{id}` supplies the current revision for the existing review
+dialog. The index never schedules, generates or approves content. Native-only
+Postiz posts remain in the Postiz calendar. Items handed over to native Postiz
+are not counted as scheduled, because they may have been moved to drafts or
+deleted there; their old studio date is hidden.
+
+The compact navigation exposes Calendar, Discussion, Mes contenus and La semaine.
+Media and settings remain available from the menu. Mobile review shows the final
+visual first, with references in an expandable section, warns about expired dates,
+and reloads the authoritative revision after saving. Approval remains explicit.
+Generation jobs awaiting an automatic retry remain in progress; only an exhausted
+retry is displayed as a failure. Interrupted plan jobs recover to a retryable state.
+`test_overview.py` and `test_retry_recovery.py` cover access, search, pagination,
+date semantics and recovery without creating any publication.
+
 The approved `pl-social-v1` charter is applied by the deterministic media renderer.
 The studio lives at `/editorial/` on the Postiz origin and authenticates each
 private request against Postiz `/api/user/self`. Only the configured owner and

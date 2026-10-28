@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 import requests
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from store import Store, Conflict, now, uid, dumps, PARIS, monday_next
@@ -18,6 +18,7 @@ from conversation import Conversation
 from companion import Companion
 from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
 from spacing import calendar_times as read_calendar, reservations, available_slot
+from overview import list_contents, content_detail
 
 ROOT=Path(__file__).parent
 store=Store(os.environ.get('EDITORIAL_DATA','/data'))
@@ -64,7 +65,10 @@ def work(chat_only=False):
                     if not retry:store.fail_revision(db,job['target'],message)
                 else:
                     table='weeks' if job['kind']=='plan' else 'items'
-                    db.execute(f"UPDATE {table} SET status='failed',error=? WHERE id=?",(message,job['target']))
+                    # A queued retry is still active work, not a terminal failure.
+                    # Keep manual retry/edit controls unavailable until this job ends.
+                    status=('preparing' if job['kind']=='plan' else 'queued') if retry else 'failed'
+                    db.execute(f"UPDATE {table} SET status=?,error=? WHERE id=?",(status,None if retry else message,job['target']))
                 store.event(db,message)
                 if not retry:db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
 
@@ -209,6 +213,16 @@ async def add_request(request:Request):
         if db.execute("SELECT count(*) FROM requests WHERE status='pending'").fetchone()[0]>=50:raise Conflict('La file contient déjà cinquante demandes.')
         id=uid();db.execute('INSERT INTO requests(id,query,note,price_mode,price,priority,created) VALUES(?,?,?,?,?,?,?)',(id,query,note,mode,price,1 if data.get('priority') in ('high',1) else 0,now()));store.event(db,'Demande de mise en avant ajoutée.',who)
     return {'id':id}
+
+@app.get('/editorial/api/contents')
+async def contents(request:Request,q:str=Query('',max_length=1000),filter:str='all',offset:int=Query(0,ge=0),limit:int=Query(30,ge=1,le=1000)):
+    await actor(request)
+    return list_contents(store,q=q,filter=filter,offset=offset,limit=limit)
+
+@app.get('/editorial/api/contents/{id}')
+async def content(id:str,request:Request):
+    await actor(request)
+    return content_detail(store,id)
 
 @app.post('/editorial/api/prepare')
 async def prepare(request:Request):

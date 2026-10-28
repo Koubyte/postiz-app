@@ -17,12 +17,19 @@ function showCorrection() {
   $('chat-correction-label').textContent=target.selectedOptions[0]?.textContent || '';
 }
 function chatMode() {
-  const active=location.hash!=='#semaine';
+  const view=location.hash==='#semaine'?'semaine':location.hash==='#contenus'?'contenus':'discussion';
+  const active=view==='discussion';
   document.body.classList.toggle('chat-mode',active);
-  $('chat-panel').hidden=!active; $('weekly-panel').hidden=active;
+  $('chat-panel').hidden=!active; $('weekly-panel').hidden=view!=='semaine'; $('contents-panel').hidden=view!=='contenus';
   $('tab-chat').setAttribute('aria-current',active?'page':'false');
-  $('tab-week').setAttribute('aria-current',active?'false':'page');
+  $('tab-week').setAttribute('aria-current',view==='semaine'?'page':'false');
+  $('tab-contents').setAttribute('aria-current',view==='contenus'?'page':'false');
+  document.querySelectorAll('[data-studio-view]').forEach(link=>{
+    if(link.dataset.studioView===view)link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  });
   if(active) refreshChat();
+  if(view==='contenus')window.refreshContents?.();
   $('studio-menu').close();
 }
 async function loadDiscussions() {
@@ -69,7 +76,7 @@ function proposalCard(msg,p,index) {
 function resultCard(item,n) {
   const card=el('article',{class:'chat-result','data-item-id':item.id});
   if(item.media_url||item.blog_media_url)card.append(el('img',{src:item.kind==='blog'?item.blog_media_url:item.media_url,alt:item.content.alt||item.content.title||'Visuel du post',loading:'lazy'}));
-  card.append(el('h4',{},item.content.title||`Post ${n+1} · préparation`),el('p',{class:'chat-result-channels'},item.kind==='blog'?'Article de blog':'Facebook · Instagram'),el('p',{class:'chat-result-date'},chatIcon('calendar-blank'),dateLabel(item.scheduled_at)));
+  card.append(el('h4',{},item.content.title||`Post ${n+1} · préparation`),el('p',{class:'chat-result-channels'},item.kind==='blog'?'Article de blog':'Facebook · Instagram'),el('p',{class:'chat-result-date'},chatIcon('calendar-blank'),item.status==='managed'?'Horaire à consulter dans Postiz':dateLabel(item.scheduled_at)));
   if(item.status!=='review')card.append(badge(item.status));
   if(item.error)card.append(el('p',{class:'notice error'},item.error));
   card.append(el('button',{class:'button chat-review',type:'button',onclick:()=>openItem(item)},item.status==='review'?'Voir et valider':'Voir le contenu'));
@@ -221,4 +228,4 @@ window.visualViewport?.addEventListener('resize',fitChatViewport);
 window.addEventListener('resize',fitChatViewport);fitChatViewport();
 window.addEventListener('hashchange',chatMode);
 chatMode();
-setInterval(()=>{if(!document.hidden&&location.hash!=='#semaine')refreshChat();},5000);
+setInterval(()=>{if(!document.hidden&&!['#semaine','#contenus'].includes(location.hash))refreshChat();},5000);

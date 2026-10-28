@@ -155,6 +155,7 @@ class Store:
             db.execute("UPDATE jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,updated=? WHERE status='running'",(now(),))
             db.execute("UPDATE messages SET status=(SELECT status FROM jobs WHERE kind='chat' AND target=messages.id),error='Réponse interrompue ; réessayez si nécessaire.' WHERE status IN ('running','queued') AND EXISTS(SELECT 1 FROM jobs WHERE kind='chat' AND target=messages.id)")
             db.execute("UPDATE items SET status='failed',error='Préparation interrompue. Vous pouvez la relancer.' WHERE status IN ('generating','rendering') AND EXISTS(SELECT 1 FROM jobs WHERE target=items.id AND status='failed')")
+            db.execute("UPDATE weeks SET status='failed',error='Préparation interrompue. Vous pouvez la relancer.' WHERE status='preparing' AND EXISTS(SELECT 1 FROM jobs WHERE kind='plan' AND target=weeks.id AND status='failed')")
             for row in db.execute("SELECT target FROM jobs WHERE kind='revise' AND status='failed'").fetchall():
                 self.fail_revision(db,row[0],'Modification interrompue. Le plan initial est conservé ; vous pouvez réessayer.')
             db.execute("UPDATE items SET status='blocked',error='Envoi interrompu : vérifier dans Postiz avant toute nouvelle tentative.' WHERE status='publishing'")

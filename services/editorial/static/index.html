@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#030303" />
     <title>Studio éditorial · Planète Laser</title>
-    <link rel="stylesheet" href="/editorial/static/style.css?v=postiz-nav-2" />
+    <link rel="stylesheet" href="/editorial/static/style.css?v=contents-1" />
+    <link rel="stylesheet" href="/editorial/static/contents.css?v=1" />
+    <link rel="stylesheet" href="/editorial/static/review.css?v=1" />
     <script src="/editorial/static/app.js" defer></script>
-    <script src="/editorial/static/chat.js?v=chat-mobile-1" defer></script>
+    <script src="/editorial/static/chat.js?v=contents-1" defer></script>
+    <script src="/editorial/static/contents.js?v=1" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Aller au contenu</a>
@@ -17,17 +20,20 @@
       <button type="button" id="chat-history-open" class="studio-icon" aria-label="Historique des discussions" aria-haspopup="dialog"><img src="/editorial/static/assets/icons/clock-counter-clockwise.svg" alt="" /></button>
     </header>
     <nav class="postiz-navigation" aria-label="Postiz">
-      <a href="/launches">Calendrier Postiz</a>
-      <a href="/editorial/#discussion" aria-current="page">Studio IA</a>
-      <a href="/media">Médias</a>
-      <a href="/settings">Réglages</a>
+      <a href="/launches" aria-label="Calendrier Postiz">Calendrier</a>
+      <a href="#discussion" data-studio-view="discussion">Discussion</a>
+      <a href="#contenus" data-studio-view="contenus">Mes contenus</a>
+      <a href="#semaine" data-studio-view="semaine">La semaine</a>
     </nav>
     <dialog id="studio-menu" class="studio-menu" aria-labelledby="studio-menu-title">
       <div class="dialog-heading"><h2 id="studio-menu-title">Studio IA</h2><button type="button" class="studio-icon close-dialog" aria-label="Fermer le menu"><img src="/editorial/static/assets/icons/x.svg" alt="" /></button></div>
       <nav aria-label="Navigation du studio">
         <a href="#discussion" id="tab-chat">Discussion</a>
+        <a href="#contenus" id="tab-contents">Mes contenus</a>
         <a href="#semaine" id="tab-week">Les 7 posts de la semaine</a>
         <a href="/launches">Calendrier Postiz</a>
+        <a href="/media">Médias Postiz</a>
+        <a href="/settings">Réglages Postiz</a>
       </nav>
       <div class="studio-menu-history">
         <label for="chat-history">Vos discussions</label><select id="chat-history" aria-label="Choisir une discussion"></select>
@@ -48,6 +54,21 @@
         <a class="button primary" href="/auth/login">Se connecter</a>
       </section>
       <section id="workspace" aria-busy="true">
+        <section id="contents-panel" hidden aria-labelledby="contents-title">
+          <div class="contents-heading">
+            <div><h1 id="contents-title">Mes contenus</h1><p class="muted">La semaine, les demandes ponctuelles et le blog, au même endroit.</p></div>
+            <a class="button secondary" href="#discussion">Parler à l’IA</a>
+          </div>
+          <div id="contents-filters" class="contents-filters" role="group" aria-label="Filtrer les contenus"></div>
+          <label class="contents-mobile-filter" for="contents-filter-select">Afficher<select id="contents-filter-select" aria-label="Filtrer les contenus"></select></label>
+          <label class="contents-search" for="contents-search">Rechercher un contenu
+            <input id="contents-search" type="search" placeholder="Un produit, un sujet, un mot…" maxlength="200" autocomplete="off" />
+          </label>
+          <div class="contents-toolbar"><p id="contents-count" class="hint" role="status" aria-live="polite">Chargement des contenus…</p><button type="button" id="contents-refresh" class="button secondary">Actualiser</button></div>
+          <div id="contents-error" class="notice error" role="alert" hidden></div>
+          <div id="contents-list" class="contents-list" aria-busy="true"></div>
+          <div class="contents-more"><button type="button" id="contents-more" class="button secondary" hidden>Voir plus de contenus</button></div>
+        </section>
         <section id="chat-panel" hidden aria-label="Discussion avec le Studio IA">
           <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
           <form id="chat-form" class="chat-composer">

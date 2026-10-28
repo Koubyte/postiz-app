@@ -1,0 +1,63 @@
+/* Same studio palette and controls, with an index built for finding and reviewing. */
+.postiz-navigation { scrollbar-width:thin; }
+.postiz-navigation a { min-height:44px; }
+#contents-panel { max-width:980px; margin:24px auto 0; padding-bottom:16px; }
+.contents-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:22px; }
+.contents-heading h1 { font-size:30px; letter-spacing:-.8px; margin:0 0 8px; }
+.contents-heading p { margin:0; font-size:14px; }
+.contents-heading>a { flex-shrink:0; }
+.contents-filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+.contents-filter { min-height:44px; border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--muted); background:var(--panel); display:flex; align-items:center; gap:8px; font-size:13px; white-space:nowrap; }
+.contents-filter[aria-pressed="true"] { color:var(--green); background:#08291e; border-color:#177c56; }
+.filter-count { font-variant-numeric:tabular-nums; font-size:12px; }
+.contents-search { font-size:13px; }
+.contents-mobile-filter { display:none; }
+.contents-search input { font-size:16px; min-height:48px; }
+.contents-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:16px 0; }
+.contents-toolbar p { margin:0; font-size:12px; }
+.contents-toolbar button { min-height:44px; padding:8px 12px; }
+.contents-list { display:grid; gap:12px; }
+.content-row { display:flex; align-items:flex-start; gap:18px; padding:20px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+.content-thumbnail { flex:0 0 88px; width:88px; }
+.content-thumbnail img { display:block; width:88px; height:110px; object-fit:contain; background:#080b09; border-radius:6px; }
+.content-no-image { font-size:12px; line-height:1.5; color:var(--muted); padding-top:8px; }
+.content-row-body { flex:1; min-width:0; }
+.content-origin { font-size:11px; line-height:1.5; color:var(--muted); margin:0 0 6px; }
+.content-row h2 { font-size:18px; line-height:1.35; margin:0 0 8px; }
+.content-title { font:inherit; color:var(--text); padding:0; border:0; background:none; text-align:left; overflow-wrap:anywhere; }
+.content-title:hover { color:var(--green); }
+.content-when { font-size:13px; color:var(--muted); margin:0 0 10px; }
+.content-row-status { display:flex; flex-wrap:wrap; gap:6px; }
+.content-issue { font-size:12px; line-height:1.6; margin:10px 0 0; color:var(--warning); overflow-wrap:anywhere; }
+.content-row-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; margin-top:14px; }
+.content-row-actions .button { font-size:13px; min-height:44px; }
+.content-secondary-link { display:inline-flex; align-items:center; min-height:44px; color:var(--muted); font-size:12px; }
+.contents-empty { text-align:center; padding:40px 20px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+.contents-empty h2 { font-size:21px; margin-bottom:12px; }
+.contents-empty p { color:var(--muted); }
+.contents-more { display:flex; justify-content:center; margin-top:22px; }
+.contents-filter:focus-visible,.content-title:focus-visible { outline-offset:3px; }
+@media(max-width:600px) {
+  #contents-panel { margin-top:18px; }
+  .contents-heading { align-items:flex-start; gap:12px; }
+  .contents-heading h1 { font-size:26px; }
+  .contents-heading p { font-size:13px; }
+  .contents-heading>a { display:none; }
+  .contents-filters { display:none; }
+  .contents-mobile-filter { display:flex; margin-bottom:12px; }
+  .contents-mobile-filter select { min-height:44px; font-size:16px; }
+  .content-row { padding:14px 12px; gap:12px; }
+  .content-thumbnail { flex-basis:64px; width:64px; }
+  .content-thumbnail img { width:64px; height:80px; }
+  .content-row h2 { font-size:17px; }
+  .content-origin { font-size:10px; }
+  .content-when { font-size:12px; }
+  .content-row-actions { gap:4px 12px; }
+  .content-row-actions .button { width:100%; padding:9px; }
+  .content-row-status .badge { font-size:10px; }
+  .contents-toolbar { margin:12px 0; }
+}
+@media(max-width:450px) {
+  .postiz-navigation { display:grid; grid-template-columns:1fr 1fr 1.2fr 1fr; padding-left:8px; padding-right:8px; gap:2px; overflow:visible; }
+  .postiz-navigation a { padding:6px 3px; font-size:12px; min-width:0; }
+}

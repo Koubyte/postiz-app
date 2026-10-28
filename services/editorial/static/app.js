@@ -806,7 +806,7 @@ function itemCard(item) {
           : `${Number(item.slot) + 1} · ${kinds[subject?.kind] || 'Facebook + Instagram'}`,
       ),
       el('h3', {}, c.title || subject?.title || 'Contenu en préparation'),
-      el('p', { class: 'card-date' }, dateLabel(item.scheduled_at)),
+      el('p', { class: 'card-date' }, item.status === 'managed' ? 'Horaire à consulter dans Postiz' : dateLabel(item.scheduled_at)),
       el(
         'p',
         { class: 'card-excerpt' },
@@ -981,6 +981,10 @@ function openItem(item) {
   const root = $('review-content');
   root.replaceChildren();
   const published = item.status === 'published';
+  const inCalendar = ['scheduled', 'managed'].includes(item.status);
+  const blogUrl = published && item.kind === 'blog' && content.slug
+    ? `https://planetelaser.fr/blog/${encodeURIComponent(content.slug)}`
+    : null;
   const immutable = ![
     'review',
     'approved',
@@ -990,7 +994,7 @@ function openItem(item) {
   ].includes(item.status);
   const heading = el(
     'div',
-    { class: 'dialog-heading' },
+    { class: 'dialog-heading review-heading' },
     el(
       'div',
       {},
@@ -998,14 +1002,16 @@ function openItem(item) {
         'p',
         { class: 'eyebrow' },
         item.kind === 'blog'
-          ? 'LE BLOG · RELECTURE'
-          : 'FACEBOOK + INSTAGRAM · RELECTURE',
+          ? 'ARTICLE DE BLOG'
+          : 'FACEBOOK + INSTAGRAM',
       ),
       el(
         'h2',
-        { id: 'review-title' },
+        { id: 'review-title', title: content.title || 'Contenu en préparation' },
         content.title || 'Contenu en préparation',
       ),
+      el('div', { class: 'review-meta' }, badge(item.status),
+        el('span', {}, item.status === 'managed' ? 'Horaire dans le calendrier Postiz' : dateLabel(item.scheduled_at))),
     ),
     el(
       'button',
@@ -1019,40 +1025,38 @@ function openItem(item) {
     ),
   );
   const media = el('div', { class: 'review-media' });
+  const primaryLabel = item.kind === 'blog' ? 'Couverture du blog' : 'Visuel social';
+  const primaryUrl = safeUrl(item.kind === 'blog' ? item.blog_media_url : item.media_url);
+  function imagePreview(label, url, primary = false) {
+    return el('figure', { class: primary ? 'review-primary-image' : 'review-reference-image' },
+      el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `${label} · ouvrir en grand` },
+        el('img', { src: url, alt: primary ? content.alt || label : label, loading: primary ? 'eager' : 'lazy' })),
+      el('figcaption', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, `${label} · agrandir ↗`)));
+  }
+  if (primaryUrl) media.append(imagePreview(primaryLabel, primaryUrl, true));
+  else media.append(el('div', { class: 'empty' }, 'Le visuel n’est pas encore disponible.'));
+  const references = el('details', { class: 'review-references' },
+    el('summary', {}, 'Références et autres formats'));
   for (const [label, value] of [
-    ['Visuel social', item.media_url],
-    ['Couverture du blog', item.blog_media_url],
+    [item.kind === 'blog' ? 'Visuel social' : 'Couverture du blog', item.kind === 'blog' ? item.media_url : item.blog_media_url],
     ['Photo du produit à comparer', item.source_media_url],
     ['Deuxième référence produit', item.source_media_2_url],
     ['Troisième référence produit', item.source_media_3_url],
   ]) {
     const url = safeUrl(value);
-    if (url)
-      media.append(
-        el('img', { src: url, alt: content.alt || label }),
-        el(
-          'a',
-          { href: url, target: '_blank', rel: 'noopener noreferrer' },
-          label + ' · ouvrir en grand ↗',
-        ),
-      );
+    if (url) references.append(imagePreview(label, url));
   }
-  if (!item.media_url && !item.blog_media_url)
-    media.append(
-      el('div', { class: 'empty' }, 'Le visuel n’est pas encore disponible.'),
-    );
-  media.append(
+  references.append(
     el(
       'p',
       { class: 'hint' },
-      'L’IA a mis le produit en scène à partir de la photo de référence. Comparez le modèle, la couleur, les commandes et les proportions avant d’approuver ; vérifiez aussi la lisibilité et les droits d’utilisation.',
+      'Comparez le modèle, la couleur et les proportions avec les photos de référence.',
     ),
-    badge(item.status),
   );
   const provenance = item.media?.provenance || item.provenance;
   if (provenance) {
     const sourceUrl = safeUrl(provenance.source_url);
-    media.append(
+    references.append(
       el(
         'div',
         { class: 'sources' },
@@ -1080,6 +1084,7 @@ function openItem(item) {
       ),
     );
   }
+  if (references.querySelector('img') || provenance) media.append(references);
   const fields = el(
     'div',
     { class: 'review-fields' },
@@ -1145,7 +1150,22 @@ function openItem(item) {
     { type: 'datetime-local', disabled: immutable, required: true },
   );
   when.input.addEventListener('input', markDirty);
-  fields.append(when.label);
+  when.input.id = 'review-scheduled-at';
+  const timingWarning = el('div', { class: 'notice review-timing-warning', role: 'status', hidden: true },
+    el('div', {}, el('strong', {}, 'Horaire à actualiser'),
+      el('p', {}, 'Choisissez un horaire au moins cinq minutes dans le futur avant de valider.')),
+    el('button', { type: 'button', class: 'button secondary', onclick: () => {
+      when.input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      when.input.focus({ preventScroll: true });
+    } }, 'Changer l’horaire'));
+  function updateTimingWarning() {
+    let scheduled = NaN;
+    try { scheduled = new Date(parisIso(when.input.value)).getTime(); } catch {}
+    timingWarning.hidden = immutable || item.status === 'approved' || scheduled > Date.now() + 300000;
+  }
+  when.input.addEventListener('input', updateTimingWarning);
+  updateTimingWarning();
+  if (item.status !== 'managed') fields.append(when.label);
   const sources = el(
     'section',
     { class: 'sources' },
@@ -1197,7 +1217,6 @@ function openItem(item) {
         ),
       ),
     );
-  if (item.status === 'managed') fields.append(el('a', { href: '/launches', class: 'button secondary' }, 'Ouvrir le calendrier Postiz'));
   const linkedArticle = item.companion_article;
   const createBlog = el('input', { type: 'checkbox', checked: linkedArticle ? linkedArticle.state === 'active' : item.blog_requested === true, disabled: item.status !== 'review' || linkedArticle?.status === 'published' });
   if (item.kind === 'social') {
@@ -1213,13 +1232,13 @@ function openItem(item) {
   if (item.derived_from_post) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
   const save = el(
     'button',
-    { class: 'button secondary', type: 'button', disabled: immutable },
-    'Enregistrer les modifications',
+    { class: 'button secondary review-save', type: 'button', disabled: true },
+    'Enregistrer',
   );
   const approve = el(
     'button',
-    { class: 'button primary', type: 'button', disabled: true },
-    'Approuver cette version',
+    { class: 'button primary review-approve', type: 'button', disabled: true },
+    item.kind === 'blog' ? 'Valider l’article' : 'Valider et programmer',
   );
   const retry = el(
     'button',
@@ -1247,7 +1266,9 @@ function openItem(item) {
   function markDirty() {
     state.dirty = true;
     approve.disabled = true;
-    save.textContent = 'Enregistrer mes modifications';
+    save.disabled = false;
+    save.textContent = 'Enregistrer';
+    footer.classList.add('has-changes');
   }
   // The approval click is the owner's confirmation; image loading is not a gate.
   approve.disabled = state.dirty || item.status !== 'review';
@@ -1263,8 +1284,9 @@ function openItem(item) {
       dialog.close();
       await refresh(true);
       await window.refreshChat?.();
-      const updated = currentWeek()?.items?.find((i) => i.id === item.id) || window.chatItem?.(item.id);
-      if (updated) openItem(updated);
+      await window.refreshContents?.(true);
+      const updated = await api(`/contents/${encodeURIComponent(item.id)}`);
+      openItem(updated);
       toast(
         'Modifications enregistrées. Relisez cette nouvelle version avant de l’approuver.',
       );
@@ -1285,6 +1307,7 @@ function openItem(item) {
       dialog.close();
       await refresh(true);
       await window.refreshChat?.();
+      await window.refreshContents?.(true);
       toast('Version approuvée pour la date affichée.');
     });
   retry.onclick = () =>
@@ -1296,6 +1319,7 @@ function openItem(item) {
       dialog.close();
       await refresh(true);
       await window.refreshChat?.();
+      await window.refreshContents?.(true);
       toast('La préparation de ce contenu est relancée.');
     });
   reject.onclick = () => {
@@ -1320,6 +1344,7 @@ function openItem(item) {
         dialog.close();
         await refresh(true);
         await window.refreshChat?.();
+        await window.refreshContents?.(true);
         toast('Contenu refusé. Il ne sera pas publié.');
       });
     reject.disabled = true;
@@ -1341,34 +1366,41 @@ function openItem(item) {
     el(
       'p',
       { class: 'hint' },
-      published
-        ? 'Ce contenu a été publié.'
-        : state.data.paused
-          ? 'Le studio est suspendu. Une approbation sera conservée, sans lancer de publication pendant la pause.'
-          : 'Toute modification annule l’approbation précédente. Sans approbation de cette version, aucune publication.',
+      inCalendar
+        ? 'Modifiez le contenu et l’horaire dans le calendrier Postiz.'
+        : published
+          ? 'Ce contenu a été publié.'
+          : state.data?.paused
+            ? 'Studio suspendu : la validation sera conservée.'
+            : item.status === 'review'
+              ? 'Votre validation autorise la publication de cette version.'
+              : labels[item.status] || 'La préparation de ce contenu est en cours.',
     ),
     el(
       'div',
       { class: 'dialog-footer' },
       el(
         'button',
-        { class: 'button secondary', type: 'button', onclick: closeReview },
+        { class: 'button secondary review-close', type: 'button', onclick: closeReview },
         'Fermer',
       ),
-      ...(!published
+      ...(inCalendar ? [el('a', { href: '/launches', class: 'button primary' }, 'Ouvrir le calendrier')] : []),
+      ...(blogUrl ? [el('a', { href: blogUrl, target: '_blank', rel: 'noopener noreferrer', class: 'button primary' }, 'Voir l’article publié ↗')] : []),
+      ...(!immutable
         ? [
-            reject,
+            ...(item.status !== 'rejected' ? [reject] : []),
             ...(['failed', 'blocked', 'rejected'].includes(item.status)
               ? [retry]
               : []),
             save,
-            approve,
+            ...(item.status === 'review' ? [approve] : []),
           ]
         : []),
     ),
   );
   root.append(
     heading,
+    timingWarning,
     el('div', { class: 'review-grid' }, media, fields),
     footer,
   );
