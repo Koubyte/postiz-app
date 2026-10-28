@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <Studio connection />;
+  return <Studio key="studio-connection" connection />;
 }
