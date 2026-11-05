@@ -194,6 +194,31 @@ Brouillons remain private and the existing site feed only exposes approved,
 published articles. The discussion UI also accepts blog proposals and opens
 specific review cards via the connector's `review_url`.
 
+The connector also accepts `visual_instructions` on `prepare_content` for a
+specific scene, composition and photographic direction. `price_mode=catalogue`
+requests the unambiguous current store price; an owner-confirmed amount may
+still be supplied explicitly. For a reference URL that the owner actually
+provided as their own photograph, `reference_owner_supplied=true` records that
+origin; it must not be used to reclassify a restricted supplier image.
+
+For material authored by the agent, `create_direct_draft` creates an unapproved
+social or blog draft from the agent's own text, without a Codex writing job.
+`import_final_visual` attaches an agent-made PNG, while
+`attach_reference_image` supplies an actual product photo to the studio's
+image generator. These methods accept image bytes as base64. For clients with
+an HTTP upload facility, `create_media_upload` provides a short-lived,
+single-use, revision-bound upload credential rather than putting an image in a
+tool call. These transports require the Bot to have access to the image bytes;
+seeing an attachment in its own chat does not establish that access. Never make
+a private image public merely to make it reachable.
+
+A directly authored draft has no automatically linked product snapshot: its
+price and stock are **not** revalidated against the catalogue unless a product
+snapshot is subsequently resolved. Exact-version approval, owner review,
+publication gates and existing delivery/idempotence checks remain unchanged.
+The automated tests cover the connector contract, not Grok's real ability to
+read an attachment, send bytes, or generate images in its own environment.
+
 Every creation/correction requires a unique request_id. Durable payload hashes
 prevent duplicate work after retries and reject reuse with changed arguments.
 Corrections require the current revision and an unapproved, undelivered item;

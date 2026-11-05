@@ -69,3 +69,12 @@ def test_edit_during_direction_selection_is_rejected(store):
         return directions()
     with pytest.raises(Conflict):choose(store,ask,item,{},None)
     with store.db() as db:assert db.execute('SELECT count(*) FROM visual_directions').fetchone()[0]==0
+
+
+def test_explicit_visual_instructions_are_prioritized_in_scene_selection(store):
+    item=store.item(create_item(store)); prompts=[]
+    instruction='Photo de trois quarts sur scène, faisceaux bleus, aucun public.'
+    choose(store,lambda prompt:(prompts.append(prompt) or directions()),item,
+           {'visual_instructions':instruction},{'title':'Enceinte'})
+    assert instruction in prompts[0]
+    assert 'prioritaires sur les suggestions de variété' in prompts[0]

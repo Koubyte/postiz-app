@@ -15,6 +15,17 @@ from store import now, dumps, planned_date, uid, Conflict
 
 class GenerationError(ValueError):pass
 
+def product_price_text(product):
+    if not product or product.get('price_mode','hide')=='hide':return None
+    if product.get('price_from') and product.get('price_mode')=='catalogue':
+        raise GenerationError('Ce produit possède plusieurs prix. Choisissez une variante précise ou masquez le prix.')
+    price=product.get('custom_price') if product.get('price_mode')=='custom' else product.get('price')
+    try:
+        price=float(price)
+        if not 0<price<100000:raise ValueError()
+        return f'{price:.2f}'.replace('.',',')+' € TTC'
+    except (ValueError,TypeError):raise GenerationError('Le prix demandé n’est pas confirmé dans le catalogue.')
+
 def bounded_text(value, maximum=12000):
     if not isinstance(value,str) or (maximum is not None and len(value)>maximum):raise GenerationError('Texte invalide ou trop long.')
     return value.strip()
@@ -216,15 +227,7 @@ class Generator:
             content['editorial_notes'].append('Recherche produit : '+str(product['research_notes'])[:800])
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un environnement pertinent pour le produit et son usage, à varier selon les scènes récentes')
         if feedback:content['_visual_feedback']=str(feedback)[:2000]
-        price_text=None
-        if product and product.get('price_mode','hide')!='hide':
-            if product.get('price_from') and product.get('price_mode')=='catalogue':raise GenerationError('Ce produit possède plusieurs prix. Choisissez une variante précise ou masquez le prix.')
-            price=product.get('custom_price') if product.get('price_mode')=='custom' else product.get('price')
-            try:
-                price=float(price)
-                if price<=0:raise ValueError()
-                price_text=f'{price:.2f}'.replace('.',',')+' € TTC'
-            except (ValueError,TypeError):raise GenerationError('Le prix demandé n’est pas confirmé dans le catalogue.')
+        price_text=product_price_text(product)
         content['price_text']=price_text
         if price_text:
             if item['kind']=='social':
@@ -240,6 +243,13 @@ class Generator:
         from media import render_assets
         item=self.store.item(id)
         plan,brief,product=self.context(item)
+        if not product and (brief.get('kind')=='product' or brief.get('product_id') or brief.get('query')):
+            raise GenerationError('Le produit demandé n’est pas encore associé au brouillon. Reprenez sa préparation avec une photo de référence.')
+        content=dict(item['content'])
+        # A render-only retry must retain the exact supplied copy while restoring
+        # the owner's structured price after resolving a previously missing product.
+        if product and product.get('price_mode'):
+            content['price_text']=product_price_text(product)
         references=[];reference_payloads=[]
         if product:
             if product.get('image_mask_required'):raise GenerationError('Cette photo fournisseur impose une restriction. Choisissez une photo autorisée avant génération.')
@@ -275,6 +285,8 @@ class Generator:
         if product and product.get('requested_variants'):
             prompt+=' Coloris à mettre en scène ensemble, chacun avec sa teinte exacte depuis la référence : '+dumps(product['requested_variants'])+'. Si la photo comprend d’autres coloris, montrez UNIQUEMENT les coloris demandés, pas tous ceux de la planche. '
         prompt+='\nRègles de mise en scène : '+RULES+'\nDirection photographique retenue : '+dumps(direction)+'\nLes anciennes ambiances génériques sont remplacées par cette direction. Respectez le lieu, la lumière, le cadrage et la justification d’usage retenus.'
+        if brief.get('visual_instructions'):
+            prompt+='\nInstructions visuelles de l’agent ou du propriétaire à respecter : '+str(brief['visual_instructions'])
         if item['content'].get('_visual_feedback'):prompt+='\nCorrection souhaitée : '+item['content']['_visual_feedback']
         if product and product.get('reference_images'):
             prompt+=' Correspondance des références jointes, dans cet ordre : '+dumps([{'reference':i+1,'coloris':r['label']} for i,r in enumerate(product['reference_images'])])+'. Montrez ensemble un exemplaire de chaque coloris demandé. '
@@ -288,7 +300,7 @@ class Generator:
         if product and not reference_used:raise GenerationError('La génération n’a pas confirmé la réception de la photo de référence. Aucun visuel produit retenu.')
         try:background=base64.b64decode(result['data'][0]['b64_json'],validate=True)
         except (ValueError,KeyError,IndexError):raise GenerationError('Le visuel généré est invalide.')
-        assets=render_assets(item_id=id+'-r'+str(item['revision']),product=product,background=background,content={**item['content'],'kind':brief.get('kind','advice')},output_dir=self.store.root/'media',product_references=references or None,reference_used=reference_used)
+        assets=render_assets(item_id=id+'-r'+str(item['revision']),product=product,background=background,content={**content,'kind':brief.get('kind','advice')},output_dir=self.store.root/'media',product_references=references or None,reference_used=reference_used)
         # Seal all approval-visible assets, never accept replacement bytes after approval.
         hashes={}
         for key in ('media','blog_media','source_media','source_media_2','source_media_3','mask_media','background_media'):
@@ -297,7 +309,7 @@ class Generator:
         with self.store.db() as db:
             current=self.store.item(id,db)
             if current['revision']!=item['revision']:raise Conflict('Le contenu a changé pendant la création du visuel.')
-            db.execute("UPDATE items SET media=?,status='review',error=NULL WHERE id=?",(dumps(assets),id))
+            db.execute("UPDATE items SET content=?,media=?,status='review',error=NULL WHERE id=?",(dumps(content),dumps(assets),id))
             self.store.event(db,'Un contenu et son visuel sont prêts à relire.')
 
 def validate_plan(value,products,week):

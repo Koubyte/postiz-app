@@ -9,6 +9,24 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 PARIS = ZoneInfo('Europe/Paris')
+EXTERNAL_VISUAL_WARNING = 'Le titre a changé ; vérifiez que le texte éventuellement incrusté dans le visuel fourni reste cohérent.'
+
+
+def visual_edit_requires_render(item, updated):
+    """Preserve a supplied finished visual and flag potential title mismatch."""
+    media = item['media']
+    has_visual = bool(media.get('media'))
+    changed_title = any(updated.get(key) != item['content'].get(key) for key in ('headline', 'title'))
+    supplied = has_visual and (media.get('provenance') or {}).get('image_mode') == 'agent-supplied-final'
+    previous_notes = item['content'].get('editorial_notes') or []
+    if supplied and (changed_title or EXTERNAL_VISUAL_WARNING in previous_notes):
+        notes = updated.get('editorial_notes') or []
+        if not isinstance(notes, list):notes = []
+        if EXTERNAL_VISUAL_WARNING not in notes:notes = [*notes, EXTERNAL_VISUAL_WARNING]
+        updated['editorial_notes'] = notes
+    return not has_visual or (changed_title and not supplied)
+
+
 def now(): return datetime.now(timezone.utc).isoformat()
 def uid(): return str(uuid.uuid4())
 def dumps(value): return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',',':'))
@@ -126,13 +144,15 @@ class Store:
             # Price and product identity are controlled by the approved plan, not the model/editor JSON.
             allowed=('title','facebook','instagram','markdown','excerpt','slug','category','headline','alt','sources','editorial_notes')
             merged={**item['content'],**{k:v for k,v in content.items() if k in allowed}}
-            changed_visual=any(merged.get(k)!=item['content'].get(k) for k in ('headline','title'))
+            changed_visual=visual_edit_requires_render(item,merged)
             media=item['media']
             status='queued' if changed_visual else 'review'
             if changed_visual:media={}
             db.execute('UPDATE items SET content=?,media=?,scheduled_at=?,revision=revision+1,status=?,approval_hash=NULL,approved_by=NULL,approved_at=NULL,error=NULL WHERE id=?',(dumps(merged),dumps(media),scheduled_at,status,id))
             if changed_visual:
-                db.execute("DELETE FROM jobs WHERE kind='render' AND target=?",(id,));self.job(db,'render',id)
+                demand=db.execute('SELECT product FROM demand_items WHERE item_id=?',(id,)).fetchone()
+                job_kind='demand_render' if demand and not demand['product'] else 'render'
+                db.execute("DELETE FROM jobs WHERE kind IN ('render','demand_render') AND target=?",(id,));self.job(db,job_kind,id)
             self.event(db,'Contenu modifié ; validation précédente annulée.',actor)
     def approve_item(self,id,revision,actor,media_reviewed,create_blog=False,*,db=None):
         if type(create_blog) is not bool:raise Conflict('Option article invalide.')

@@ -162,6 +162,11 @@ Retournez {"reply":str,"proposals":[{"title":str,"format":"social|blog","kind":"
     def draft(self,item_id):
         item=self.store.item(item_id)
         if item['status'] not in ('queued','generating','failed'):return
+        self.resolve_product(item_id)
+        self.generator.draft(item_id)
+
+    def resolve_product(self,item_id):
+        """Resolve and persist a demand's reference without rewriting its text."""
         with self.store.db() as db:
             row=dict(db.execute('SELECT * FROM demand_items WHERE item_id=?',(item_id,)).fetchone())
         brief=json.loads(row['brief']);product=json.loads(row['product']) if row['product'] else None
@@ -169,7 +174,12 @@ Retournez {"reply":str,"proposals":[{"title":str,"format":"social|blog","kind":"
             try:catalogue=self.generator.products()
             except Exception:catalogue=[] # Manufacturer research is available even if the shop is offline.
             product=self.generator.match(brief['query'],catalogue) or self.generator.resolve_external(brief['query'])
-            product={**product,'note':brief['angle'],'price_mode':'custom' if brief.get('price') is not None else 'hide','custom_price':brief.get('price')}
+            price_mode='custom' if brief.get('price') is not None else brief.get('price_mode','hide')
+            if price_mode not in ('hide','custom','catalogue'):raise GenerationError('Mode de prix invalide.')
+            product={**product,'note':brief['angle'],'price_mode':price_mode,'custom_price':brief.get('price')}
+            if price_mode=='catalogue':
+                from generation import product_price_text
+                product_price_text(product)
         if brief['photo_ids']:
             if not product:raise GenerationError('Précisez le produit représenté sur vos photos avant de préparer ce visuel.')
             with self.store.db() as db:
@@ -178,19 +188,23 @@ Retournez {"reply":str,"proposals":[{"title":str,"format":"social|blog","kind":"
             product={**product,'thumbnail':refs[0]['url'],'reference_images':refs,'image_mask_required':False,'image_scope':'requested_variants','variant_uncertainty':'','media_note':'Photos fournies par le propriétaire ; fidélité et droits à vérifier.'}
         reference=brief.get('suggested_reference')
         if reference and product and not brief['photo_ids']:
-            if product.get('image_mask_required'):raise GenerationError('Cette référence produit impose une restriction photo.')
+            owner_supplied=brief.get('reference_owner_supplied') is True
+            if product.get('image_mask_required') and not owner_supplied:raise GenerationError('Cette référence produit impose une restriction photo.')
             from net import public_bytes
             from media import _decode
             _decode(public_bytes(reference['url'],8*1024*1024))
             # Agent-provided research is kept as provenance; the owner still checks
             # fidelity and rights in the same required visual approval screen.
-            product={**product,'thumbnail':reference['url'],'reference_images':[{**reference,'label':product['title']}],'image_scope':'requested_variants','media_note':'Référence proposée par Grok Bot, fidélité et droits à vérifier avant validation.'}
+            product={**product,'thumbnail':reference['url'],'reference_images':[{**reference,'label':product['title']}],'image_scope':'requested_variants','media_note':'Photo fournie par le propriétaire ; fidélité et droits à vérifier.' if owner_supplied else 'Référence proposée par Grok Bot, fidélité et droits à vérifier avant validation.'}
+            if owner_supplied:
+                product['supplier_image_mask_required']=product.get('image_mask_required')
+                product['image_mask_required']=False
             variants=product.get('requested_variants') or []
             if variants and all(v.get('confirmed') is True for v in variants):product['variant_uncertainty']=''
         brief['product_id']=product['id'] if product else None
         with self.store.db() as db:
             db.execute('UPDATE demand_items SET brief=?,product=? WHERE item_id=?',(dumps(brief),dumps(product) if product else None,item_id))
-        self.generator.draft(item_id)
+        return product
 
 
 def checked_date(value,allow_past=False):

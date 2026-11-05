@@ -41,6 +41,11 @@ agent_asgi=BearerGate(agent_mcp.streamable_http_app(),agent_service)
 def safe_error(exc):
     return str(exc)[:500] if isinstance(exc,(Conflict,GenerationError,MediaBlocked)) else 'Une étape a échoué. Aucun nouvel envoi ne sera effectué sans vérification.'
 
+def render_demand(id):
+    # Resolve the missing product/reference without regenerating supplied copy.
+    conversation.resolve_product(id)
+    generator.render(id)
+
 def work(chat_only=False):
     while not stop.wait(3):
         if store.paused():continue
@@ -51,11 +56,11 @@ def work(chat_only=False):
             db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?",(now(),job['id']))
             if job['kind'] in STRATEGY_JOBS:strategy.started(db,job['kind'],job['target'])
             if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
-            if job['kind']=='render':db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
+            if job['kind'] in ('render','demand_render'):db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
             if job['kind'] in ('draft','demand','companion'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
             if job['kind'] in STRATEGY_JOBS:strategy.run(job['kind'],job['target'])
-            else:{'plan':generator.plan,'draft':generator.draft,'render':generator.render,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
+            else:{'plan':generator.plan,'draft':generator.draft,'render':generator.render,'demand_render':render_demand,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -385,6 +390,27 @@ async def binary_body(request,limit):
         chunks.append(chunk)
     if not size:raise HTTPException(400,'Fichier vide.')
     return b''.join(chunks)
+
+@app.post('/editorial/media-upload')
+async def agent_media_upload(request:Request):
+    # The token lives only in a private MCP response and this header, never in
+    # an access-loggable URL. Claiming happens before reading any upload bytes.
+    origin=request.headers.get('origin')
+    if origin and origin!=os.environ['PUBLIC_URL'].rstrip('/'):
+        raise HTTPException(403,'Origine de la demande refusée.')
+    grant=await asyncio.to_thread(agent_service.claim_media_upload,request.headers.get('x-editorial-upload-token',''))
+    chunks=[];size=0;limit=8*1024*1024
+    async for chunk in request.stream():
+        size+=len(chunk)
+        if size>limit:raise HTTPException(413,'Fichier trop volumineux.')
+        chunks.append(chunk)
+    if not size:raise HTTPException(400,'Fichier vide.')
+    import base64
+    encoded=base64.b64encode(b''.join(chunks)).decode('ascii')
+    args=('upload-'+uid(),grant['item_id'],grant['revision'],encoded)
+    if grant['purpose']=='reference':
+        return await asyncio.to_thread(agent_service.attach_reference_image,*args,'Photo transmise par le propriétaire')
+    return await asyncio.to_thread(agent_service.import_final_visual,*args)
 
 @app.get('/editorial/api/conversations')
 async def conversations(request:Request):

@@ -19,7 +19,9 @@ def authorize(store,db,parent,actor,enabled):
     cid=demand['conversation_id'] if demand else uid()
     if not demand:db.execute('INSERT INTO conversations VALUES(?,?,?)',(cid,'Article associé · '+source['title'][:60],now()))
     article_id=old['article_id'] if old else uid()
-    brief={'title':source['title'],'kind':'product' if product else 'advice','query':'','product_id':product['id'] if product else None,'angle':'Développez en un article de blog utile le post approuvé ci-dessous. Conservez le sujet et les faits vérifiés ; approfondissez avec des conseils et des sources fabricant. Ne présentez pas un test personnel ni des faits commerciaux nouveaux. Ne rédigez aucun prix : le logiciel ajoute le prix validé si applicable.\n'+dumps({k:source.get(k) for k in ('title','facebook','instagram','sources')}),'scene':source.get('scene','Un environnement adapté à l’usage du produit, à varier par rapport au post associé'),'scheduled_at':parent['scheduled_at'],'photo_ids':json.loads(demand['brief']).get('photo_ids',[]) if demand else [],'price':None,'instruction':'','format':'blog'}
+    parent_brief=json.loads(demand['brief']) if demand else {}
+    query=parent_brief.get('query','') if not product else ''
+    brief={'title':source['title'],'kind':'product' if product or query else 'advice','query':query,'product_id':product['id'] if product else None,'angle':'Développez en un article de blog utile le post approuvé ci-dessous. Conservez le sujet et les faits vérifiés ; approfondissez avec des conseils et des sources fabricant. Ne présentez pas un test personnel ni des faits commerciaux nouveaux. Ne rédigez aucun prix : le logiciel ajoute le prix validé si applicable.\n'+dumps({k:source.get(k) for k in ('title','facebook','instagram','sources')}),'scene':source.get('scene','Un environnement adapté à l’usage du produit, à varier par rapport au post associé'),'scheduled_at':parent['scheduled_at'],'photo_ids':parent_brief.get('photo_ids',[]),'price':None,'instruction':'','format':'blog'}
     # Persist a frozen product/brief from the approved post, not a fresh product match.
     if old:
         child=store.item(article_id,db)
@@ -64,7 +66,13 @@ class Companion:
             item=self.store.item(article_id,db)
         if item['status'] in ('approved','published'):return
         if item['status']=='rendering':self.generator.render(article_id)
-        elif item['status']!='review':self.generator.draft(article_id)
+        elif item['status']!='review':
+            with self.store.db() as db:
+                demand=db.execute('SELECT brief,product FROM demand_items WHERE item_id=?',(article_id,)).fetchone()
+            if demand and not demand['product'] and json.loads(demand['brief']).get('query'):
+                from conversation import Conversation
+                Conversation(self.store,self.generator).resolve_product(article_id)
+            self.generator.draft(article_id)
         with self.store.db() as db:
             grant=require_authorization(self.store,db,article_id)
             item=self.store.item(article_id,db)

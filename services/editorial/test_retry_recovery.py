@@ -33,7 +33,7 @@ def run_once(worker, monkeypatch):
     worker.work()
 
 
-@pytest.mark.parametrize('kind', ['plan', 'draft', 'render', 'demand', 'companion'])
+@pytest.mark.parametrize('kind', ['plan', 'draft', 'render', 'demand', 'demand_render', 'companion'])
 def test_transient_error_stays_active_until_retry_is_exhausted(worker, monkeypatch, kind):
     store = worker.store
     target = store.prepare('2030-10-28')
@@ -51,6 +51,7 @@ def test_transient_error_stays_active_until_retry_is_exhausted(worker, monkeypat
         'draft': (worker.generator, 'draft'),
         'render': (worker.generator, 'render'),
         'demand': (worker.conversation, 'draft'),
+        'demand_render': (worker, 'render_demand'),
         'companion': (worker.companion, 'run'),
     }[kind]
 
