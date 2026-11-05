@@ -10,7 +10,8 @@ from urllib.parse import urlsplit
 
 from PIL import Image, ImageOps
 
-DERIVATIVE_SUFFIX = '.v1.webp'
+DERIVATIVE_SUFFIX = '.v2.webp'
+SUPPORTED_DERIVATIVE_SUFFIXES = ('.v1.webp', DERIVATIVE_SUFFIX)
 _lock = threading.Lock()
 
 
@@ -38,9 +39,10 @@ def public_image_path(root: Path, name: str, articles: list[dict]) -> Path | Non
     if name in published:
         source = root / 'media' / name
         return source if source.is_file() else None
-    if not name.endswith(DERIVATIVE_SUFFIX):
+    suffix = next((suffix for suffix in SUPPORTED_DERIVATIVE_SUFFIXES if name.endswith(suffix)), None)
+    if suffix is None:
         return None
-    original = name[:-len(DERIVATIVE_SUFFIX)]
+    original = name[:-len(suffix)]
     if original not in published or Path(original).suffix.lower() not in ('.png', '.jpg', '.jpeg'):
         return None
     source = root / 'media' / original

@@ -373,7 +373,8 @@ def articles():return {'articles':[optimized_article(article,os.environ.get('PUB
 def public_media(name:str):
     path=public_image_path(store.root,name,store.public_articles())
     if path is None:raise HTTPException(404)
-    return FileResponse(path,headers={'Cache-Control':'public, max-age=3600'})
+    media_type='image/webp' if path.suffix.lower()=='.webp' else None
+    return FileResponse(path,media_type=media_type,headers={'Cache-Control':'public, max-age=3600'})
 
 async def binary_body(request,limit):
     if request.headers.get('origin')!=os.environ['PUBLIC_URL'].rstrip('/') or request.headers.get('x-editorial-action')!='1':raise HTTPException(403,'Origine de la demande refusée.')

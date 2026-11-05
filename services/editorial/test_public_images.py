@@ -20,26 +20,37 @@ def test_published_blog_images_are_webp_cached_and_revocable(tmp_path, monkeypat
     Image.new('RGB', (1600, 900), (32, 128, 80)).save(source)
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     Image.new('RGB', (200, 200), 'red').save(media / 'draft.png')
-    published = [{'slug': 'guide', 'imageUrl': 'https://postiz.example.com/editorial/public/media/approved-blog.png'}]
+    Image.new('RGB', (200, 200), 'blue').save(media / 'native.webp', format='WEBP')
+    published = [
+        {'slug': 'guide', 'imageUrl': 'https://postiz.example.com/editorial/public/media/approved-blog.png'},
+        {'slug': 'native', 'imageUrl': 'https://postiz.example.com/editorial/public/media/native.webp'},
+    ]
     monkeypatch.setattr(module.store, 'public_articles', lambda: published)
+    # The slim production container may not have a WebP mapping in /etc/mime.types.
+    import starlette.responses
+    monkeypatch.setattr(starlette.responses, 'guess_type', lambda *args: (None, None))
 
     with TestClient(module.app) as client:
         feed = client.get('/editorial/public/articles')
         assert feed.headers['cache-control'] == 'no-store'
-        assert feed.json()['articles'][0]['imageUrl'].endswith('/approved-blog.png.v1.webp')
+        assert feed.json()['articles'][0]['imageUrl'].endswith('/approved-blog.png.v2.webp')
         assert published[0]['imageUrl'].endswith('/approved-blog.png')
 
-        image = client.get('/editorial/public/media/approved-blog.png.v1.webp')
+        image = client.get('/editorial/public/media/approved-blog.png.v2.webp')
         assert image.status_code == 200
         assert image.headers['content-type'] == 'image/webp'
         assert image.headers['cache-control'] == 'public, max-age=3600'
-        with Image.open(tmp_path / 'public-image-cache' / 'approved-blog.png.v1.webp') as converted:
+        assert client.get('/editorial/public/media/native.webp').headers['content-type'] == 'image/webp'
+        legacy = client.get('/editorial/public/media/approved-blog.png.v1.webp')
+        assert legacy.status_code == 200
+        assert legacy.headers['content-type'] == 'image/webp'
+        with Image.open(tmp_path / 'public-image-cache' / 'approved-blog.png.v2.webp') as converted:
             assert converted.format == 'WEBP'
             assert converted.size == (1200, 675)
         assert hashlib.sha256(source.read_bytes()).hexdigest() == before
         assert client.get('/editorial/public/media/approved-blog.png').status_code == 200
 
-        for path in ('/editorial/public/media/draft.png', '/editorial/public/media/draft.png.v1.webp'):
+        for path in ('/editorial/public/media/draft.png', '/editorial/public/media/draft.png.v1.webp', '/editorial/public/media/draft.png.v2.webp'):
             response = client.get(path)
             assert response.status_code == 404
             assert response.headers['cache-control'] == 'no-store'
@@ -48,9 +59,10 @@ def test_published_blog_images_are_webp_cached_and_revocable(tmp_path, monkeypat
         assert private.headers['cache-control'] == 'no-store'
 
         published.clear()
-        revoked = client.get('/editorial/public/media/approved-blog.png.v1.webp')
-        assert revoked.status_code == 404
-        assert revoked.headers['cache-control'] == 'no-store'
+        for suffix in ('.v1.webp', '.v2.webp'):
+            revoked = client.get('/editorial/public/media/approved-blog.png' + suffix)
+            assert revoked.status_code == 404
+            assert revoked.headers['cache-control'] == 'no-store'
 
 
 def test_external_and_existing_webp_urls_are_left_alone():
@@ -66,7 +78,7 @@ def test_webp_derivative_preserves_alpha(tmp_path):
     media.mkdir()
     Image.new('RGBA', (160, 90), (50, 100, 200, 0)).save(media / 'transparent.png')
     articles = [{'imageUrl': 'https://postiz.example.com/editorial/public/media/transparent.png'}]
-    path = public_image_path(tmp_path, 'transparent.png.v1.webp', articles)
+    path = public_image_path(tmp_path, 'transparent.png.v2.webp', articles)
     with Image.open(path) as image:
         assert image.mode == 'RGBA'
         assert image.getpixel((10, 10))[3] == 0
