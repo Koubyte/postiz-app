@@ -20,6 +20,7 @@ from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
 from spacing import calendar_times as read_calendar, reservations, available_slot
 from overview import list_contents, content_detail
 from strategy import Strategy, JOBS as STRATEGY_JOBS
+from public_images import optimized_article, public_image_path
 
 ROOT=Path(__file__).parent
 store=Store(os.environ.get('EDITORIAL_DATA','/data'))
@@ -127,7 +128,7 @@ async def headers(request,call_next):
     response.headers['Referrer-Policy']='same-origin'
     response.headers['X-Frame-Options']='SAMEORIGIN'
     response.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"
-    response.headers['Cache-Control']='no-store'
+    response.headers.setdefault('Cache-Control','no-store')
     return response
 
 @app.exception_handler(Conflict)
@@ -366,14 +367,13 @@ async def media(name:str,request:Request):
     return FileResponse(path)
 
 @app.get('/editorial/public/articles')
-def articles():return {'articles':store.public_articles()}
+def articles():return {'articles':[optimized_article(article,os.environ.get('PUBLIC_URL','')) for article in store.public_articles()]}
 
 @app.get('/editorial/public/media/{name}')
 def public_media(name:str):
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+',name) or not any(p.get('imageUrl','').endswith('/'+name) for p in store.public_articles()):raise HTTPException(404)
-    path=store.root/'media'/name
-    if not path.is_file():raise HTTPException(404)
-    return FileResponse(path)
+    path=public_image_path(store.root,name,store.public_articles())
+    if path is None:raise HTTPException(404)
+    return FileResponse(path,headers={'Cache-Control':'public, max-age=3600'})
 
 async def binary_body(request,limit):
     if request.headers.get('origin')!=os.environ['PUBLIC_URL'].rstrip('/') or request.headers.get('x-editorial-action')!='1':raise HTTPException(403,'Origine de la demande refusée.')
