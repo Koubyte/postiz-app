@@ -408,9 +408,14 @@ async def agent_media_upload(request:Request):
     import base64
     encoded=base64.b64encode(b''.join(chunks)).decode('ascii')
     args=('upload-'+uid(),grant['item_id'],grant['revision'],encoded)
-    if grant['purpose']=='reference':
-        return await asyncio.to_thread(agent_service.attach_reference_image,*args,'Photo transmise par le propriétaire')
-    return await asyncio.to_thread(agent_service.import_final_visual,*args)
+    from agent_identity import current_identity
+    identity={'key_id':grant['key_id'],'scope':'full'} if grant.get('key_id') else None
+    context_token=current_identity.set(identity)
+    try:
+        if grant['purpose']=='reference':
+            return await asyncio.to_thread(agent_service.attach_reference_image,*args,'Photo transmise par le propriétaire')
+        return await asyncio.to_thread(agent_service.import_final_visual,*args)
+    finally:current_identity.reset(context_token)
 
 @app.get('/editorial/api/conversations')
 async def conversations(request:Request):
@@ -507,11 +512,13 @@ def connect_page():return FileResponse(ROOT/'static'/'connect.html')
 @app.get('/editorial/api/agent-connection')
 async def agent_connection(request:Request):
     await actor(request)
-    return {**agent_service.token_status(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':INSTRUCTIONS}
+    return {**agent_service.token_status(),'keys':agent_service.list_agent_keys(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':INSTRUCTIONS}
 
 @app.post('/editorial/api/agent-connection')
 async def change_agent_connection(request:Request):
     who=await actor(request);data=await body(request)
     if data.get('action')=='rotate':return {'token':agent_service.rotate(who)}
     if data.get('action')=='revoke':agent_service.revoke(who);return {'ok':True}
+    if data.get('action')=='create_key':return agent_service.create_agent_key(who,data.get('label',''),'full')
+    if data.get('action')=='revoke_key':agent_service.revoke_agent_key(who,data.get('id'));return {'ok':True}
     raise Conflict('Action inconnue.')

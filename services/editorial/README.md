@@ -422,6 +422,18 @@ calendar, media library, settings, account controls and theme stay available
 while using Discussion, Contenus, Semaine and Idées. `/studio/connect` provides
 the Grok connection screen in the same layout.
 
+### Independent agent keys
+
+The owner-only connection page can create named additional agent keys without
+rotating the original Grok key. Each key is shown only at creation; only its
+SHA-256 hash and non-secret metadata are stored. A named key can be revoked
+without revoking the original Grok key or other named keys. These credentials
+currently grant the same connector capabilities as the original key, including
+drafts, media, calendars, and approval relay; they are not restricted to blog.
+The private connection page lets the owner copy the key and revoke each key.
+The remote client must support the connector's `Authorization: Bearer` header;
+compatibility with a particular client's custom MCP UI needs its own verification.
+
 The native route hosts the editorial content document on the same origin with
 `embedded=1`; the document removes its standalone header, navigation and footer.
 Native theme tokens are shared with the document. Messages are accepted only

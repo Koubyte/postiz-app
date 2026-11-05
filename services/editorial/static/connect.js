@@ -1,6 +1,7 @@
 'use strict';
 const byId=id=>document.getElementById(id);
 let connected=false;
+let keyCreationPending=false;
 async function connectionApi(data){
   const response=await fetch('/editorial/api/agent-connection',{method:data?'POST':'GET',credentials:'same-origin',headers:data?{'Content-Type':'application/json','X-Editorial-Action':'1'}:{},body:data?JSON.stringify(data):undefined});
   const result=await response.json();if(!response.ok)throw new Error(result.error||result.detail||'Connexion indisponible.');return result;
@@ -12,8 +13,21 @@ async function refresh(){
   byId('connection-state').textContent=result.last_used_at?'Connecteur utilisé le '+new Date(result.last_used_at).toLocaleString('fr-FR',{timeZone:'Europe/Paris'})+' (Paris).':connected?'Clé créée. Ajoutez-la dans Grok Bot pour terminer la connexion.':'Aucune clé active.';
   byId('rotate-key').textContent=connected?'Remplacer la clé de connexion':'Créer une clé de connexion';
   ['copy-url','copy-instructions','rotate-key'].forEach(id=>byId(id).disabled=false);byId('revoke-key').disabled=!connected;
+  byId('create-agent-key').disabled=keyCreationPending;
+  const list=byId('agent-key-list');list.replaceChildren();
+  for(const key of result.keys||[]){
+    const row=document.createElement('p');
+    const label=document.createElement('span');label.textContent=key.label+' · accès complet ';
+    const revoke=document.createElement('button');revoke.type='button';revoke.className='button secondary';revoke.textContent='Révoquer cette clé';
+    revoke.onclick=async()=>{
+      if(!confirm('Révoquer uniquement la clé de cet agent ?'))return;
+      revoke.disabled=true;
+      try{await connectionApi({action:'revoke_key',id:key.id});await refresh();}catch(error){fail(error);revoke.disabled=false;}
+    };
+    row.append(label,revoke);list.append(row);
+  }
 }
-for(const [button,input] of [['copy-url','mcp-url'],['copy-key','mcp-key'],['copy-instructions','bot-instructions']]){
+for(const [button,input] of [['copy-url','mcp-url'],['copy-key','mcp-key'],['copy-new-key','new-mcp-key'],['copy-instructions','bot-instructions']]){
   byId(button).onclick=async()=>{try{await navigator.clipboard.writeText(byId(input).value);const previous=byId(button).textContent;byId(button).textContent='Copié';setTimeout(()=>byId(button).textContent=previous,1800);}catch{fail(new Error('Copie automatique indisponible : sélectionnez et copiez le champ.'));}};
 }
 byId('rotate-key').onclick=async()=>{
@@ -21,11 +35,19 @@ byId('rotate-key').onclick=async()=>{
   byId('rotate-key').disabled=true;byId('connection-error').hidden=true;
   try{const result=await connectionApi({action:'rotate'});byId('mcp-key').value='Bearer '+result.token;byId('key-result').hidden=false;await refresh();}catch(e){fail(e);}finally{byId('rotate-key').disabled=false;}
 };
+byId('create-agent-key').onclick=async()=>{
+  if(keyCreationPending)return;
+  keyCreationPending=true;byId('create-agent-key').disabled=true;byId('connection-error').hidden=true;
+  try{
+    const result=await connectionApi({action:'create_key',label:byId('new-key-label').value});
+    byId('new-mcp-key').value='Bearer '+result.token;byId('new-key-result').hidden=false;await refresh();
+  }catch(error){fail(error);}finally{keyCreationPending=false;byId('create-agent-key').disabled=false;}
+};
 byId('revoke-key').onclick=async()=>{
   if(!confirm('Révoquer l’accès de Grok Bot ?'))return;
   byId('revoke-key').disabled=true;
   try{await connectionApi({action:'revoke'});byId('mcp-key').value='';byId('key-result').hidden=true;await refresh();}catch(e){fail(e);byId('revoke-key').disabled=false;}
 };
-window.addEventListener('pagehide',()=>{byId('mcp-key').value='';byId('key-result').hidden=true;});
+window.addEventListener('pagehide',()=>{byId('mcp-key').value='';byId('key-result').hidden=true;byId('new-mcp-key').value='';byId('new-key-result').hidden=true;});
 refresh().catch(fail);
 setInterval(()=>{if(!document.hidden)refresh().catch(fail);},15000);
