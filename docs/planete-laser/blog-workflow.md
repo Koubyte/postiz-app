@@ -70,7 +70,7 @@ Le prix public Planète Laser vient du catalogue France/EUR ou d'une valeur expl
 
 ## Rédaction, mise en forme et images
 
-Voix : expert de proximité à Forbach, vouvoiement, accessible, phrases concrètes, exemples d'usages, limites et compatibilités explicites. Une réponse utile arrive avant les arguments commerciaux. Aucune accumulation de superlatifs ou de mots-clés ; pas de promesse d'avoir essayé ce qui a seulement été documenté. Signature « Planète Laser » sans inventer un rédacteur ou un expert individuel.
+Voix : expert de proximité à Forbach, tutoiement par défaut, ton chaleureux, rock et professionnel, phrases concrètes sans jargon ni familiarité forcés, exemples d'usages, limites et compatibilités explicites. Respecter une voix différente explicitement demandée pour un contenu. Une réponse utile arrive avant les arguments commerciaux. Aucune accumulation de superlatifs ou de mots-clés ; pas de promesse d'avoir essayé ce qui a seulement été documenté. Signature « Planète Laser » sans inventer un rédacteur ou un expert individuel.
 
 Deux gabarits éditoriaux :
 

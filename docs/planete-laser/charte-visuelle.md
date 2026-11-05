@@ -1,6 +1,6 @@
 # Planète Laser — charte éditoriale et visuelle des contenus
 
-Version : `pl-social-v1` · direction approuvée le 23 octobre 2026 ; chaque contenu final reste soumis à validation.
+Version : `pl-social-v1` · direction approuvée le 23 octobre 2026, voix éditoriale actualisée le 5 novembre 2026 ; chaque contenu final reste soumis à validation.
 
 Cette charte est appliquée par le studio éditorial dans les gabarits de composition. La direction est approuvée par le propriétaire. La validation d'un plan éditorial autorise la rédaction ; l'approbation des contenus et leur publication restent des étapes distinctes.
 
@@ -103,7 +103,7 @@ La passerelle Codex reçoit désormais la photo jointe avec le brief de mise en 
 
 ## 7. Ton, contenu et blog
 
-- Voix : spécialiste de proximité, accessible, précis et utile. Vouvoiement ; explication des termes techniques lorsqu'ils servent le conseil.
+- Voix : spécialiste de proximité, accessible, précis et utile. Tutoiement par défaut dans les posts, les accroches et les articles ; ton chaleureux, rock et professionnel, naturel sans jargon ni familiarité forcés. Expliquer les termes techniques lorsqu'ils servent le conseil ; respecter une autre voix si elle est explicitement demandée pour un contenu.
 - Partir de l'usage : « Pour répéter sans réveiller la maison… », puis présenter la solution adaptée et ses limites.
 - Bannir les superlatifs automatiques, les résultats garantis et les témoignages inventés. Un texte ne doit pas prétendre que l'équipe a essayé le produit si aucune note d'essai n'a été fournie.
 - Une information utile par publication ; pas de fiche technique entière incrustée dans une image.
