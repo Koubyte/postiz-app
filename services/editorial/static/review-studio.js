@@ -399,6 +399,32 @@ window.StudioReview = (() => {
     return bar;
   }
 
+  // Live editorial quality of a social draft, with a one-click AI correction.
+  function buildQualityPanel(item, onFix) {
+    const quality = item.quality;
+    if (!quality || item.kind !== 'social') return null;
+    const issues = [...(quality.blocking || []), ...(quality.warnings || [])];
+    const level = quality.blocking?.length ? 'bad' : issues.length ? 'warn' : 'ok';
+    const panel = el('section', { class: `quality-panel ${level}`, 'aria-label': 'Qualité du texte' });
+    panel.append(el('div', { class: 'quality-head' },
+      el('strong', {}, 'Qualité du texte'),
+      el('span', { class: `v2-pill ${level}` }, `${quality.score}/100`)));
+    if (!issues.length) {
+      panel.append(el('p', { class: 'hint' }, 'Conforme au guide de rédaction.'));
+      return panel;
+    }
+    panel.append(el('ul', {},
+      ...(quality.blocking || []).map((issue) => el('li', { class: 'is-blocking' }, issue)),
+      ...(quality.warnings || []).map((issue) => el('li', {}, issue))));
+    const editable = ['review', 'approved', 'rejected', 'blocked', 'failed'].includes(item.status);
+    if (editable && onFix) {
+      const fix = el('button', { type: 'button', class: 'button secondary' }, 'Corriger selon le guide');
+      fix.onclick = () => onFix(('Réécris les deux légendes selon le guide de rédaction en corrigeant : ' + issues.join(' ; ')).slice(0, 1900), fix);
+      panel.append(fix);
+    }
+    return panel;
+  }
+
   function buildCarouselEditor(initialSlides, onChanged, onRecomposite, canRecomposite) {
     let slides = Array.isArray(initialSlides) ? initialSlides.map(s => ({ headline: s.headline || '', body: s.body || '' })) : [];
     const box = el('section', { class: 'carousel-editor' });
@@ -513,6 +539,7 @@ window.StudioReview = (() => {
     buildMarkdownToolbar,
     buildVisualStudioPanel,
     buildAiCopilotBar,
+    buildQualityPanel,
     buildCarouselEditor,
   };
 })();

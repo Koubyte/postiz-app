@@ -189,7 +189,9 @@ def editable_content(value,item):
         if key in checked:merged[key]=checked[key]
     for key in ('seo_title','seo_description','tags','carousel_slides','visual_instructions'):
         if key in value and key not in checked and not merged.get(key):merged.pop(key,None)
-    merged['editorial_notes']=list(dict.fromkeys(item['content'].get('editorial_notes',[])+checked['editorial_notes']))
+    # Quality notes describe the agent's last submission; the live review panel replaces them.
+    kept=[n for n in item['content'].get('editorial_notes',[]) if not n.startswith('Qualité : ')]
+    merged['editorial_notes']=list(dict.fromkeys(kept+checked['editorial_notes']))
     return merged
 
 @app.get('/health')

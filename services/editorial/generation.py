@@ -111,7 +111,8 @@ def social_quality(content, recent_openers=()):
         if pattern and pattern in recent_openers:
             warnings.append('Même formule d’accroche que des posts récents : change d’angle et de première phrase.')
     if fb:
-        if len(re.findall(r'(?<!\w)#\w+', fb)) > 2:warnings.append('Facebook : 2 hashtags maximum.')
+        fb_tags = len(re.findall(r'(?<!\w)#\w+', fb))
+        if fb_tags > 2:warnings.append(f'Facebook : {fb_tags} hashtags ; 2 maximum sur ce réseau.')
         words = len(re.sub(r'(?<!\w)#\w+|https?://\S+', '', fb).split())
         if not 50 <= words <= 230:warnings.append(f'Facebook : {words} mots ; vise 80 à 180 mots.')
     score = max(0, 100 - 30 * len(blocking) - 8 * len(warnings))

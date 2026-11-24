@@ -478,6 +478,47 @@
 }
 
 /* AI Copilot Bar */
+/* Editorial quality of the draft (same gate as Grok). */
+.quality-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--studio-radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--panel2);
+}
+.quality-panel.bad {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.quality-panel.warn {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--line));
+}
+.quality-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.quality-panel ul {
+  margin: 8px 0 10px;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.quality-panel li.is-blocking {
+  color: var(--danger);
+}
+.quality-panel .hint {
+  margin: 6px 0 0;
+}
+.quality-panel .button {
+  min-height: 36px;
+  padding: 7px 14px;
+  font-size: 12px;
+}
 .ai-copilot-bar {
   border: 1px solid color-mix(in srgb, var(--studio-accent) 35%, var(--line));
   border-radius: var(--studio-radius);

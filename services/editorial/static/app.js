@@ -1340,6 +1340,17 @@ function openItem(item, queue = null) {
   if (references.querySelector('img') || provenance) media.append(references);
 
   const fields = el('div', { class: 'review-fields' });
+  const qualityPanel = window.StudioReview?.buildQualityPanel?.(item, (instruction, btn) =>
+    action(btn, async () => {
+      await api(`/items/${encodeURIComponent(item.id)}/ai-revise`, {
+        revision: state.item.revision,
+        instruction,
+        scope: 'text',
+        template: content.template,
+      });
+      await reloadReviewItem('Correction lancée… Le texte se mettra à jour dès que c’est prêt.');
+    }));
+  if (qualityPanel) fields.append(qualityPanel);
   if (window.StudioReview?.buildAiCopilotBar) {
     const copilot = window.StudioReview.buildAiCopilotBar(item, (instruction, scope, btn) => {
       if (!instruction) {
@@ -1614,9 +1625,10 @@ function openItem(item, queue = null) {
         ),
   );
   editPane.append(sources);
-  if (content.editorial_notes?.length) editPane.append(el('details', { class: 'sources' },
+  const notes = (content.editorial_notes || []).filter((note) => !(item.quality && note.startsWith('Qualité : ')));
+  if (notes.length) editPane.append(el('details', { class: 'sources' },
     el('summary', {}, 'Remarques de rédaction · sans blocage'),
-    el('ul', {}, content.editorial_notes.map((note) => el('li', {}, note))),
+    el('ul', {}, notes.map((note) => el('li', {}, note))),
   ));
   if (item.error)
     editPane.append(el('div', { class: 'notice error' }, item.error));

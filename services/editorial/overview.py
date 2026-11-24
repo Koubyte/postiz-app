@@ -5,6 +5,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from store import Conflict
+from generation import social_quality
 
 
 FILTERS = {'all', 'review', 'attention', 'scheduled', 'published', 'progress', 'blog'}
@@ -157,6 +158,7 @@ def content_detail(store, identifier):
         # Approval seals are server-side implementation details, never needed by
         # the owner editor. Delivery metadata suffices to show channel status.
         item.pop('approval_hash', None)
+        item['quality'] = social_quality(item['content']) if item['kind'] == 'social' and item['content'].get('instagram') else None
         item['deliveries'] = [dict(delivery) for delivery in db.execute(
             'SELECT id,item_id,revision,channel,status,updated FROM deliveries WHERE item_id=? ORDER BY channel,revision',
             (identifier,),
