@@ -144,6 +144,7 @@ def plan_staging(store,item,brief,product,history):
     staging=content.get('staging') or brief.get('staging')
     forced_scene=content.get('store_scene_id') or brief.get('store_scene_id')
     scenes=list_scenes(store,include_inactive=False)
+    matched=set()
     if forced_scene:
         eligible=[s for s in scenes if s['id']==forced_scene]
         if not eligible:raise Conflict('Le lieu du magasin choisi est introuvable ou en pause.')
@@ -151,7 +152,8 @@ def plan_staging(store,item,brief,product,history):
         # The catalogue URL carries the category (…/guitares-basses/…, …/pianos-claviers/…), titles often do not.
         subject=_fold(' '.join(str(x) for x in ((product or {}).get('title'),(product or {}).get('category'),(product or {}).get('url'),content.get('title'),brief.get('title'),brief.get('angle')) if x))
         # A place suits the product when one of its uses appears in the subject; untagged or 'tous' places suit everything.
-        eligible=[s for s in scenes if not s['tags'] or 'tous' in s['tags'] or any(_fold(t).rstrip('sx') in subject for t in s['tags'] if len(_fold(t).rstrip('sx'))>=2)]
+        matched={s['id'] for s in scenes if any(_fold(t).rstrip('sx') in subject for t in s['tags'] if len(_fold(t).rstrip('sx'))>=2)}
+        eligible=[s for s in scenes if s['id'] in matched or not s['tags'] or 'tous' in s['tags']]
     allowed=['store','in_use','lifestyle','detail'] if product else ['store','in_use','lifestyle']
     if not eligible:allowed=[a for a in allowed if a!='store']
     if staging not in allowed:
@@ -160,7 +162,11 @@ def plan_staging(store,item,brief,product,history):
     scene=None
     if eligible and (forced_scene or staging!='lifestyle'):
         recent_scenes=[h.get('store_scene_id') for h in history]
-        scene=min(eligible,key=lambda s:(s['id'] in recent_scenes[:3],recent_scenes.count(s['id']),s['recent_uses'],s['created']))
+        # Several photos of one piece of furniture share a label prefix ("Fauteuil cuir · …"): change place, not just angle.
+        place=lambda scene:scene['label'].split(' · ')[0].strip().lower()
+        labels={s['id']:place(s) for s in scenes}
+        last_place=labels.get(recent_scenes[0]) if recent_scenes else None
+        scene=min(eligible,key=lambda s:(s['id'] in recent_scenes[:3],place(s)==last_place,recent_scenes.count(s['id']),s['id'] not in matched,s['recent_uses'],s['created']))
     return {'staging':staging,'store_scene':{k:scene[k] for k in ('id','label','description','tags')} if scene else None}
 
 

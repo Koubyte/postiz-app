@@ -150,3 +150,15 @@ def test_catalogue_category_matches_tagged_places(store):
     item = {'id': 'x', 'content': {}}
     assert plan_staging(store, item, {}, guitar, [])['store_scene']['id'] == armchair['id']
     assert plan_staging(store, item, {}, piano, [])['store_scene']['id'] == stage['id']
+
+
+def test_same_furniture_is_not_used_twice_in_a_row_and_tag_matches_win_ties(store):
+    sofa_a = add_scene(store, photo('navy'), 'Chesterfield · face', '', ['tous'])
+    sofa_b = add_scene(store, photo('teal'), 'Chesterfield · côté', '', ['tous'])
+    armchair = add_scene(store, photo('sienna'), 'Fauteuil cuir · mur de guitares', '', ['basses'])
+    bass = {'title': 'Lakland Skyline 55-02', 'category': 'guitares-basses'}
+    item = {'id': 'x', 'content': {}}
+    assert plan_staging(store, item, {}, bass, [])['store_scene']['id'] == armchair['id']
+    # sofa_b is unused, but it is the same Chesterfield: the next visual moves to the armchair.
+    after_sofa = plan_staging(store, item, {}, {'title': 'Ampli basse'}, [{'staging': 'store', 'store_scene_id': sofa_a['id']}])
+    assert after_sofa['store_scene']['id'] == armchair['id']
