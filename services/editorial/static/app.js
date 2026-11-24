@@ -7,6 +7,8 @@ const state = {
   dirty: false,
   pending: false,
   item: null,
+  queue: [],
+  queueIndex: -1,
   loading: false,
 };
 const labels = {
@@ -227,7 +229,12 @@ async function refresh(force = false) {
     const linked = new URLSearchParams(location.search).get('item');
     if (linked && !new URLSearchParams(location.search).has('conversation') && !state.itemLinkOpened) {
       const item = data.weeks.flatMap(w => w.items || []).find(i => i.id === linked);
-      if (item) { state.itemLinkOpened = true; openItem(item); }
+      if (item) {
+        state.itemLinkOpened = true;
+        api('/contents/' + encodeURIComponent(item.id))
+          .then((full) => openItem(full))
+          .catch(() => openItem(item));
+      }
     }
   } catch (e) {
     message(e.message, true);
@@ -307,7 +314,7 @@ function render() {
       );
     if (w.error) out.append(el('div', { class: 'notice error' }, w.error));
     if (items.length)
-      out.append(el('div', { class: 'content-grid' }, ...items.map(itemCard)));
+      out.append(el('div', { class: 'content-grid' }, ...items.map((it) => itemCard(it, items))));
     else if (w.status === 'failed') {
       const retry = el(
         'button',
@@ -392,7 +399,7 @@ function renderPlan(w) {
     el(
       'p',
       {},
-      'Ajustez les titres, les angles, les scènes et les dates. Chaque date est libre, même en dehors de la semaine du plan, et affichée en heure de Paris. La validation de ce plan lance la rédaction et la création des visuels ; elle ne publie aucun contenu.',
+      'Parcourez les cartes de la semaine et dépliez « Modifier les détails » pour ajuster un titre, un angle ou une date (heure de Paris). Valider le plan lance la création ; aucune publication ne part sans votre accord.',
     ),
   );
   const plan = structuredClone(w.plan);
@@ -405,7 +412,7 @@ function renderPlan(w) {
       ),
     );
   const dates = [];
-  function dateField(brief) {
+  function dateField(brief, dayLabel) {
     const value = field(
       'Publication · heure de Paris',
       'input',
@@ -413,7 +420,14 @@ function renderPlan(w) {
       { type: 'datetime-local', required: true },
     );
     dates.push({ brief, input: value.input });
-    value.input.addEventListener('input', markDirty);
+    value.input.addEventListener('input', () => {
+      markDirty();
+      if (dayLabel) {
+        try {
+          dayLabel.textContent = dateLabel(parisIso(value.input.value));
+        } catch {}
+      }
+    });
     return value.label;
   }
   if (plan.unresolved_requests?.length)
@@ -432,8 +446,11 @@ function renderPlan(w) {
         ),
       ),
     );
-  const list = el('div', { class: 'plan-list' });
+  const list = el('div', { class: 'plan-grid-v2' });
   for (const subject of plan.subjects || []) {
+    const product = (plan.products || state.data.products || []).find(
+      (p) => p.id === subject.product_id,
+    );
     const title = field('Sujet', 'input', subject.title, { maxlength: 160 });
     const angle = field('Angle éditorial', 'textarea', subject.angle, {
       rows: 2,
@@ -443,42 +460,44 @@ function renderPlan(w) {
       rows: 2,
       maxlength: 800,
     });
-    const card = el(
+    const dayLabel = el('span', { class: 'plan-day-label' }, dateLabel(subject.scheduled_at));
+    const pills = el(
       'div',
-      { class: 'plan-card' },
-      el(
-        'div',
-        { class: 'card-top' },
-        el(
-          'span',
-          { class: 'category' },
-          `${Number(subject.slot) + 1} · ${kinds[subject.kind] || subject.kind}`,
-        ),
-        el('span', { class: 'hint' }, dateLabel(subject.scheduled_at)),
-      ),
+      { class: 'pill-row' },
+      el('span', { class: 'v2-pill accent' }, `${Number(subject.slot) + 1} · ${kinds[subject.kind] || subject.kind}`),
+      product
+        ? el('span', { class: 'v2-pill' }, product.title.slice(0, 32))
+        : null,
+      product
+        ? el(
+            'span',
+            { class: 'v2-pill ' + (product.price_mode === 'hide' ? '' : 'ok') },
+            product.price_mode === 'catalogue'
+              ? 'Prix catalogue'
+              : product.price_mode === 'custom'
+                ? `${product.custom_price} €`
+                : 'Sans prix',
+          )
+        : null,
+    );
+    const titleHeading = el('h4', { class: 'plan-card-title' }, subject.title || 'Sujet à nommer');
+    const angleSummary = el('p', { class: 'plan-card-angle' }, subject.angle || '');
+    const details = el(
+      'details',
+      { class: 'plan-card-edit' },
+      el('summary', {}, 'Modifier les détails'),
       title.label,
       angle.label,
       scene.label,
-      dateField(subject),
+      dateField(subject, dayLabel),
     );
-    const product = (plan.products || state.data.products || []).find(
-      (p) => p.id === subject.product_id,
+    const card = el(
+      'article',
+      { class: 'plan-card-v2' },
+      el('div', { class: 'plan-card-head' }, dayLabel, pills),
+      titleHeading,
+      angleSummary,
     );
-    if (product)
-      card.append(
-        el(
-          'p',
-          { class: 'hint' },
-          'Produit : ' +
-            product.title +
-            (product.ean ? ' · EAN ' + product.ean : '') +
-            (product.price_mode === 'catalogue'
-              ? ' · Prix du catalogue'
-              : product.price_mode === 'custom'
-                ? ' · Prix confirmé : ' + product.custom_price + ' €'
-                : ' · Sans prix'),
-        ),
-      );
     if (product?.external)
       card.append(el('p', { class: 'hint' }, product.variant_uncertainty
         ? 'Modèle identifié · Coloris à préciser : ' + product.variant_uncertainty
@@ -489,10 +508,12 @@ function renderPlan(w) {
             : 'Modèle et photo de référence identifiés.'));
     title.input.addEventListener('input', () => {
       subject.title = title.input.value;
+      titleHeading.textContent = title.input.value || 'Sujet à nommer';
       markDirty();
     });
     angle.input.addEventListener('input', () => {
       subject.angle = angle.input.value;
+      angleSummary.textContent = angle.input.value;
       markDirty();
     });
     scene.input.addEventListener('input', () => {
@@ -500,14 +521,19 @@ function renderPlan(w) {
       markDirty();
     });
     card.append(
+      details,
       el(
-        'button',
-        {
-          class: 'button secondary',
-          type: 'button',
-          onclick: () => openSubjectRevision(w, subject.slot),
-        },
-        'Modifier ce post',
+        'div',
+        { class: 'plan-card-actions' },
+        el(
+          'button',
+          {
+            class: 'button secondary',
+            type: 'button',
+            onclick: () => openSubjectRevision(w, subject.slot),
+          },
+          'Modifier avec l’IA',
+        ),
       ),
     );
     list.append(card);
@@ -521,27 +547,39 @@ function renderPlan(w) {
       rows: 3,
       maxlength: 3000,
     });
+    const dayLabel = el('span', { class: 'plan-day-label' }, dateLabel(a.scheduled_at));
+    const articleHeading = el('h4', { class: 'plan-card-title' }, a.title || 'Article de blog hebdomadaire');
+    const articleAngle = el('p', { class: 'plan-card-angle' }, a.angle || '');
     list.append(
       el(
-        'div',
-        { class: 'plan-card' },
+        'article',
+        { class: 'plan-card-v2 is-blog' },
         el(
           'div',
-          { class: 'card-top' },
-          el('span', { class: 'category' }, 'BLOG · 1 ARTICLE'),
-          el('span', { class: 'hint' }, dateLabel(a.scheduled_at)),
+          { class: 'plan-card-head' },
+          dayLabel,
+          el('div', { class: 'pill-row' }, el('span', { class: 'v2-pill accent' }, 'BLOG · 1 ARTICLE SEO')),
         ),
-        title.label,
-        angle.label,
-        dateField(a),
+        articleHeading,
+        articleAngle,
+        el(
+          'details',
+          { class: 'plan-card-edit' },
+          el('summary', {}, 'Modifier les détails'),
+          title.label,
+          angle.label,
+          dateField(a, dayLabel),
+        ),
       ),
     );
     title.input.addEventListener('input', () => {
       a.title = title.input.value;
+      articleHeading.textContent = title.input.value || 'Article de blog hebdomadaire';
       markDirty();
     });
     angle.input.addEventListener('input', () => {
       a.angle = angle.input.value;
+      articleAngle.textContent = angle.input.value;
       markDirty();
     });
   }
@@ -771,11 +809,14 @@ function openSubjectRevision(week, slot = null, request = null) {
   $('subject-content').replaceChildren(form);
   dialog.showModal();
 }
-function itemCard(item) {
+const itemTemplateLabels = { classic: 'Classique', minimal: 'Plein cadre', raw: 'Photo brute', tip_card: 'Carte conseil' };
+function itemCard(item, queue = null) {
   const c = item.content || {};
   const w = currentWeek();
   const subject = w?.plan?.subjects?.find((s) => s.slot === item.slot);
   const image = safeUrl(item.media_url || item.blog_media_url);
+  const tpl = c.template || item.template || 'classic';
+  const slideCount = Number(item.slide_count || (Array.isArray(c.carousel_slides) ? c.carousel_slides.length : 0));
   const media = el(
     'div',
     { class: 'card-media' },
@@ -792,6 +833,25 @@ function itemCard(item) {
         ),
     badge(item.status),
   );
+  const reviewBtn = el(
+    'button',
+    {
+      class: 'button secondary',
+      type: 'button',
+      onclick: async () => {
+        reviewBtn.disabled = true;
+        try {
+          const full = await api(`/contents/${encodeURIComponent(item.id)}`);
+          openItem(full, queue || w?.items || []);
+        } catch {
+          openItem(item, queue || w?.items || []);
+        } finally {
+          reviewBtn.disabled = false;
+        }
+      },
+    },
+    item.status === 'review' ? 'Relire et valider' : 'Voir le contenu',
+  );
   const card = el(
     'article',
     { class: 'content-card' },
@@ -807,6 +867,18 @@ function itemCard(item) {
           : `${Number(item.slot) + 1} · ${kinds[subject?.kind] || 'Facebook + Instagram'}`,
       ),
       el('h3', {}, c.title || subject?.title || 'Contenu en préparation'),
+      (item.kind === 'social' && tpl !== 'classic') || slideCount >= 2
+        ? el(
+            'div',
+            { class: 'pill-row' },
+            item.kind === 'social' && tpl !== 'classic'
+              ? el('span', { class: 'v2-pill' }, itemTemplateLabels[tpl] || tpl)
+              : null,
+            slideCount >= 2
+              ? el('span', { class: 'v2-pill accent' }, `Carrousel · ${slideCount} pages`)
+              : null,
+          )
+        : null,
       el('p', { class: 'card-date' }, item.status === 'managed' ? 'Horaire à consulter dans Postiz' : dateLabel(item.scheduled_at)),
       el(
         'p',
@@ -817,22 +889,50 @@ function itemCard(item) {
           c.facebook ||
           'Le studio prépare ce contenu.',
       ),
-      el(
-        'button',
-        {
-          class: 'button secondary',
-          type: 'button',
-          onclick: () => openItem(item),
-        },
-        item.status === 'review' ? 'Relire et valider' : 'Voir le contenu',
-      ),
+      reviewBtn,
     ),
   );
   return card;
 }
 function renderRequests() {
-  const rows = (state.data.requests || []).map((r) =>
-    el(
+  const rows = (state.data.requests || []).map((r) => {
+    const actions = el('div', { class: 'pill-row' });
+    if (r.status === 'pending' && currentWeek()?.status === 'plan_review') {
+      actions.append(
+        el(
+          'button',
+          {
+            class: 'button secondary',
+            type: 'button',
+            onclick: () => openSubjectRevision(currentWeek(), null, r),
+          },
+          'Utiliser dans cette semaine',
+        ),
+      );
+    }
+    if (r.status === 'pending') {
+      const delBtn = el('button', { class: 'button danger', type: 'button' }, 'Supprimer');
+      let armTimer = null;
+      delBtn.onclick = () => {
+        if (!delBtn.dataset.armed) {
+          delBtn.dataset.armed = '1';
+          delBtn.textContent = 'Confirmer ?';
+          armTimer = setTimeout(() => {
+            delete delBtn.dataset.armed;
+            delBtn.textContent = 'Supprimer';
+          }, 4000);
+          return;
+        }
+        clearTimeout(armTimer);
+        action(delBtn, async () => {
+          await api(`/requests/${encodeURIComponent(r.id)}/delete`, {});
+          await refresh(true);
+          toast('Demande supprimée.');
+        });
+      };
+      actions.append(delBtn);
+    }
+    return el(
       'article',
       { class: 'request-row' },
       el(
@@ -858,19 +958,9 @@ function renderRequests() {
         ),
         badge(r.status),
       ),
-      r.status === 'pending' && currentWeek()?.status === 'plan_review'
-        ? el(
-            'button',
-            {
-              class: 'button secondary',
-              type: 'button',
-              onclick: () => openSubjectRevision(currentWeek(), null, r),
-            },
-            'Utiliser dans cette semaine',
-          )
-        : null,
-    ),
-  );
+      actions.childElementCount ? actions : null,
+    );
+  });
   $('requests').replaceChildren(
     ...(rows.length
       ? rows
@@ -927,6 +1017,8 @@ function appendInline(parent, text) {
   parent.append(document.createTextNode(text.slice(last)));
 }
 function renderMarkdown(text) {
+  if (window.StudioReview?.renderMarkdownV2)
+    return window.StudioReview.renderMarkdownV2(text);
   const box = el('div', { class: 'markdown-preview' });
   let paragraph = [];
   let list = null;
@@ -974,9 +1066,22 @@ function renderMarkdown(text) {
   flush();
   return box;
 }
-function openItem(item) {
+function openItem(item, queue = null) {
+  if (window._reviewKeyHandler) {
+    document.removeEventListener('keydown', window._reviewKeyHandler);
+    window._reviewKeyHandler = null;
+  }
+  if (window._reviewPollTimer) {
+    clearInterval(window._reviewPollTimer);
+    window._reviewPollTimer = null;
+  }
   state.item = item;
   state.dirty = false;
+  if (Array.isArray(queue) && queue.length) state.queue = queue;
+  else if (!Array.isArray(state.queue) || !state.queue.some((q) => q.id === item.id))
+    state.queue = [item];
+  state.queueIndex = state.queue.findIndex((q) => q.id === item.id);
+
   const content = structuredClone(item.content || {});
   const dialog = $('item-dialog');
   const root = $('review-content');
@@ -984,6 +1089,7 @@ function openItem(item) {
   const published = item.status === 'published';
   const publishedBlog = published && item.kind === 'blog';
   const inCalendar = ['scheduled', 'managed'].includes(item.status);
+  const deletable = ['review', 'rejected', 'blocked', 'failed', 'draft'].includes(item.status);
   const blogUrl = publishedBlog && content.slug
     ? `${storefrontOrigin}/blog/${encodeURIComponent(content.slug)}`
     : null;
@@ -994,6 +1100,85 @@ function openItem(item) {
     'blocked',
     'failed',
   ].includes(item.status);
+
+  async function reloadReviewItem(msg) {
+    const [fresh] = await Promise.all([
+      api(`/contents/${encodeURIComponent(item.id)}`),
+      refresh(true),
+      window.refreshChat?.(),
+      window.refreshContents?.(true),
+    ]);
+    state.dirty = false;
+    openItem(fresh, state.queue);
+    if (msg) toast(msg);
+  }
+
+  let navPrev = null;
+  let navNext = null;
+  async function navigateQueue(delta) {
+    if (state.pending || state.queueIndex < 0) return;
+    const nextIdx = state.queueIndex + delta;
+    if (nextIdx < 0 || nextIdx >= state.queue.length) return;
+    if (state.dirty && !window.confirm('Changer de contenu sans enregistrer vos modifications ?'))
+      return;
+    const nextEntry = state.queue[nextIdx];
+    if (!nextEntry) return;
+    if (navPrev) navPrev.disabled = true;
+    if (navNext) navNext.disabled = true;
+    try {
+      const full = await api(`/contents/${encodeURIComponent(nextEntry.id)}`);
+      state.dirty = false;
+      openItem(full, state.queue);
+    } catch (e) {
+      toast(e.message || 'Impossible de charger ce contenu.');
+    }
+  }
+
+  const headingActions = el('div', { class: 'review-heading-actions' });
+  if (state.queue.length > 1 && state.queueIndex >= 0) {
+    navPrev = el(
+      'button',
+      {
+        type: 'button',
+        disabled: state.queueIndex === 0,
+        'aria-label': 'Contenu précédent (Alt+Gauche)',
+        onclick: () => navigateQueue(-1),
+      },
+      '← Préc.',
+    );
+    navNext = el(
+      'button',
+      {
+        type: 'button',
+        disabled: state.queueIndex >= state.queue.length - 1,
+        'aria-label': 'Contenu suivant (Alt+Droite)',
+        onclick: () => navigateQueue(1),
+      },
+      'Suiv. →',
+    );
+    headingActions.append(
+      el(
+        'div',
+        { class: 'review-queue-nav' },
+        navPrev,
+        el('span', { class: 'review-queue-count' }, `${state.queueIndex + 1} / ${state.queue.length}`),
+        navNext,
+      ),
+    );
+  }
+  headingActions.append(
+    el(
+      'button',
+      {
+        class: 'icon-button',
+        type: 'button',
+        'aria-label': 'Fermer',
+        onclick: closeReview,
+      },
+      '×',
+    ),
+  );
+
   const heading = el(
     'div',
     { class: 'dialog-heading review-heading' },
@@ -1015,17 +1200,9 @@ function openItem(item) {
       el('div', { class: 'review-meta' }, badge(item.status),
         el('span', {}, item.status === 'managed' ? 'Horaire dans le calendrier Postiz' : dateLabel(item.scheduled_at))),
     ),
-    el(
-      'button',
-      {
-        class: 'icon-button',
-        type: 'button',
-        'aria-label': 'Fermer',
-        onclick: closeReview,
-      },
-      '×',
-    ),
+    headingActions,
   );
+
   const media = el('div', { class: 'review-media' });
   const primaryLabel = item.kind === 'blog' ? 'Couverture du blog' : 'Visuel social';
   const primaryUrl = safeUrl(item.kind === 'blog' ? item.blog_media_url : item.media_url);
@@ -1035,8 +1212,77 @@ function openItem(item) {
         el('img', { src: url, alt: primary ? content.alt || label : label, loading: primary ? 'eager' : 'lazy' })),
       el('figcaption', {}, el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, `${label} · agrandir ↗`)));
   }
-  if (primaryUrl) media.append(imagePreview(primaryLabel, primaryUrl, true));
-  else media.append(el('div', { class: 'empty' }, 'Le visuel n’est pas encore disponible.'));
+
+  if (window.StudioReview?.buildVisualStudioPanel) {
+    media.append(
+      window.StudioReview.buildVisualStudioPanel(item, {
+        onTemplateSwitch: (tpl, btn) =>
+          action(btn, async () => {
+            const res = await api(`/items/${encodeURIComponent(item.id)}/visual`, {
+              revision: state.item.revision,
+              template: tpl,
+              recomposite_only: Boolean(
+                item.has_background ||
+                item.media?.provenance?.background_file ||
+                (tpl === 'tip_card' && !content.product_id && !item.brief?.product_id),
+              ),
+            });
+            await reloadReviewItem(
+              res.result?.recomposited
+                ? 'Gabarit visuel appliqué.'
+                : 'Génération avec ce gabarit lancée…',
+            );
+          }),
+        onRegenerateVisual: (instructions, btn) =>
+          action(btn, async () => {
+            await api(`/items/${encodeURIComponent(item.id)}/visual`, {
+              revision: state.item.revision,
+              visual_instructions: instructions || undefined,
+              template: content.template,
+              recomposite_only: false,
+            });
+            await reloadReviewItem('Génération du nouveau visuel lancée…');
+          }),
+        onUploadImage: (file, purpose, btn) =>
+          action(btn, async () => {
+            const bytes = await file.arrayBuffer();
+            const response = await fetch(`/editorial/api/items/${encodeURIComponent(item.id)}/upload-image`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': file.type || 'application/octet-stream',
+                'X-Editorial-Action': '1',
+                'X-Item-Revision': String(state.item.revision),
+                'X-Image-Purpose': purpose,
+                'X-File-Name': file.name || 'image.png',
+              },
+              body: bytes,
+            });
+            if (response.status === 401) {
+              $('login').hidden = false;
+              $('workspace').hidden = true;
+              throw new Error('Votre session a expiré. Connectez-vous à Postiz.');
+            }
+            let data = {};
+            try { data = await response.json(); } catch {}
+            if (!response.ok) {
+              const detail = data.detail || data.error || 'Importation impossible.';
+              throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+            }
+            await reloadReviewItem(
+              purpose === 'final'
+                ? 'Visuel final importé.'
+                : 'Photo de référence importée et mise en scène.',
+            );
+          }),
+      }),
+    );
+  } else if (primaryUrl) {
+    media.append(imagePreview(primaryLabel, primaryUrl, true));
+  } else {
+    media.append(el('div', { class: 'empty' }, 'Le visuel n’est pas encore disponible.'));
+  }
+
   const references = el('details', { class: 'review-references' },
     el('summary', {}, 'Références et autres formats'));
   for (const [label, value] of [
@@ -1087,9 +1333,27 @@ function openItem(item) {
     );
   }
   if (references.querySelector('img') || provenance) media.append(references);
-  const fields = el(
-    'div',
-    { class: 'review-fields' },
+
+  const fields = el('div', { class: 'review-fields' });
+  if (window.StudioReview?.buildAiCopilotBar) {
+    const copilot = window.StudioReview.buildAiCopilotBar(item, (instruction, scope, btn) => {
+      if (!instruction) {
+        toast('Décrivez la retouche ou cliquez sur un raccourci.');
+        return;
+      }
+      action(btn, async () => {
+        await api(`/items/${encodeURIComponent(item.id)}/ai-revise`, {
+          revision: state.item.revision,
+          instruction,
+          scope,
+          template: content.template,
+        });
+        await reloadReviewItem('Retouche IA lancée… Le brouillon se mettra à jour dès que c’est prêt.');
+      });
+    });
+    if (copilot) fields.append(copilot);
+  }
+  fields.append(
     el(
       'p',
       { class: 'hint' },
@@ -1098,59 +1362,199 @@ function openItem(item) {
         : 'Destinations : Facebook · Planète Laser et Instagram · @planete_laser.',
     ),
   );
+
+  const tabsBar = el('div', { class: 'review-tabs', role: 'tablist', 'aria-label': 'Vues du contenu' });
+  const editPane = el('div', { role: 'tabpanel' });
+  const previewPaneA = el('div', { role: 'tabpanel', hidden: true });
+  const previewPaneB = el('div', { role: 'tabpanel', hidden: true });
+  fields.append(tabsBar, editPane, previewPaneA, previewPaneB);
+
   const inputs = {};
-  let savedMarkdown;
-  let updateMarkdownPreview;
+  let savedPublishedState = null;
+  let updateMarkdownPreview = () => {};
+  function formatTags(val) {
+    return Array.isArray(val) ? val.join(', ') : String(val || '');
+  }
+  function parseTags(val) {
+    return String(val || '').split(',').map((s) => s.trim()).filter(Boolean);
+  }
   function add(key, label, tag = 'input', attrs = {}) {
-    const f = field(label, tag, content[key] || '', {
-      disabled: immutable,
+    const initial = key === 'tags' ? formatTags(content[key]) : (content[key] || '');
+    const f = field(label, tag, initial, {
+      disabled: immutable && !publishedBlog,
       ...attrs,
     });
     inputs[key] = f.input;
     f.input.addEventListener('input', markDirty);
-    fields.append(f.label);
+    editPane.append(f.label);
     return f;
   }
-  if (!publishedBlog) add('title', 'Titre du contenu');
+
+  add('title', 'Titre du contenu');
   if (item.kind !== 'blog')
     add('headline', 'Accroche du visuel', 'input', { maxlength: 90 });
+
   if (item.kind === 'blog') {
-    if (!publishedBlog) {
-      add('slug', 'Adresse de l’article (slug)');
-      const category = add('category', 'Rubrique', 'select');
-      category.input.append(
-        ...[
-          ['guides', 'Conseils et guides'],
-          ['actualites', 'Actualités'],
-          ['produits', 'Produits'],
-        ].map(([value, label]) => el('option', { value }, label)),
-      );
-      category.input.value = content.category || 'guides';
-      add('excerpt', 'Introduction courte', 'textarea', { rows: 3 });
-    }
-    const md = add('markdown', 'Article · Markdown', 'textarea', {
-      class: 'blog-editor',
+    if (!publishedBlog) add('slug', 'Adresse de l’article (slug)');
+    const category = add('category', 'Rubrique', 'select');
+    category.input.append(
+      ...[
+        ['guides', 'Conseils et guides'],
+        ['actualites', 'Actualités'],
+        ['produits', 'Produits'],
+      ].map(([value, label]) => el('option', { value }, label)),
+    );
+    category.input.value = content.category || 'guides';
+    add('seo_title', 'Titre SEO Google (max. 60 car.)', 'input', { maxlength: 90 });
+    add('seo_description', 'Meta description Google (130–160 car.)', 'textarea', { rows: 2, maxlength: 220 });
+    add('tags', 'Mots-clés / tags (séparés par des virgules)', 'input', { maxlength: 300 });
+    add('excerpt', 'Introduction courte', 'textarea', { rows: 3 });
+
+    const mdArea = el('textarea', {
+      id: 'review-blog-markdown',
+      class: 'blog-editor with-toolbar',
       rows: 18,
       disabled: immutable && !publishedBlog,
+      value: content.markdown || '',
     });
-    savedMarkdown = md.input.value;
-    const preview = el('details', {}, el('summary', {}, 'Aperçu de l’article'));
-    let previewBox = renderMarkdown(content.markdown);
-    preview.append(previewBox);
-    updateMarkdownPreview = () => {
-      const next = renderMarkdown(md.input.value);
-      previewBox.replaceWith(next);
-      previewBox = next;
-    };
-    md.input.addEventListener('input', updateMarkdownPreview);
-    fields.append(preview);
+    inputs.markdown = mdArea;
+    mdArea.addEventListener('input', markDirty);
+    const mdWrap = el('div', {}, el('label', { for: 'review-blog-markdown' }, 'Article · Markdown'));
+    if (!(immutable && !publishedBlog) && window.StudioReview?.buildMarkdownToolbar) {
+      mdWrap.append(window.StudioReview.buildMarkdownToolbar(mdArea, markDirty));
+    } else {
+      mdArea.classList.remove('with-toolbar');
+    }
+    mdWrap.append(mdArea);
+    editPane.append(mdWrap);
+
+    if (publishedBlog) {
+      savedPublishedState = {
+        title: inputs.title.value,
+        category: inputs.category.value,
+        seo_title: inputs.seo_title.value,
+        seo_description: inputs.seo_description.value,
+        tags: formatTags(parseTags(inputs.tags.value)),
+        excerpt: inputs.excerpt.value,
+        markdown: inputs.markdown.value,
+      };
+    }
+
+    function renderBlogPreviews() {
+      previewPaneA.replaceChildren(renderMarkdown(inputs.markdown.value));
+      if (window.StudioReview?.buildSerpPreview) {
+        previewPaneB.replaceChildren(
+          window.StudioReview.buildSerpPreview({
+            title: inputs.title.value,
+            seoTitle: inputs.seo_title.value,
+            seoDescription: inputs.seo_description.value,
+            excerpt: inputs.excerpt.value,
+            slug: inputs.slug?.value || content.slug,
+            markdown: inputs.markdown.value,
+          }),
+        );
+      }
+    }
+    updateMarkdownPreview = renderBlogPreviews;
+
+    const tabSpecs = [
+      ['edit', 'Éditer', editPane],
+      ['article', 'Aperçu Article', previewPaneA],
+      ['serp', 'Aperçu Google', previewPaneB],
+    ];
+    tabSpecs.forEach(([key, label, pane], index) => {
+      const btn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'review-tab',
+          role: 'tab',
+          'aria-selected': index === 0 ? 'true' : 'false',
+          onclick: () => {
+            tabSpecs.forEach(([, , p], j) => {
+              p.hidden = j !== index;
+            });
+            tabsBar.querySelectorAll('.review-tab').forEach((t, j) => {
+              t.setAttribute('aria-selected', j === index ? 'true' : 'false');
+            });
+            if (key !== 'edit') renderBlogPreviews();
+          },
+        },
+        label,
+      );
+      tabsBar.append(btn);
+    });
   } else {
     add('facebook', 'Texte Facebook', 'textarea', { rows: 7, maxlength: 5000 });
     add('instagram', 'Texte Instagram', 'textarea', {
       rows: 8,
       maxlength: 2200,
     });
+    if (!immutable && window.StudioReview?.buildCarouselEditor) {
+      editPane.append(
+        window.StudioReview.buildCarouselEditor(
+          content.carousel_slides,
+          (nextSlides) => {
+            content.carousel_slides = nextSlides;
+            markDirty();
+          },
+          (nextSlides, btn) =>
+            action(btn, async () => {
+              content.carousel_slides = nextSlides;
+              await api(`/items/${encodeURIComponent(item.id)}/visual`, {
+                revision: state.item.revision,
+                template: content.template,
+                carousel_slides: nextSlides,
+                recomposite_only: Boolean(item.has_background || item.media?.provenance?.background_file),
+              });
+              await reloadReviewItem('Carrousel mis à jour.');
+            }),
+          Boolean(item.has_background || item.media?.provenance?.background_file),
+        ),
+      );
+    }
+    function renderSocialPreviewPane(platform, pane) {
+      if (!window.StudioReview?.buildSocialPreview) return;
+      pane.replaceChildren(
+        window.StudioReview.buildSocialPreview(platform, {
+          instagram: inputs.instagram.value,
+          facebook: inputs.facebook.value,
+          slides: Array.isArray(item.carousel_media_urls) && item.carousel_media_urls.length >= 2
+            ? item.carousel_media_urls
+            : undefined,
+          imageUrl: item.media_url,
+        }),
+      );
+    }
+    const tabSpecs = [
+      ['edit', 'Éditer', editPane],
+      ['instagram', 'Aperçu Instagram', previewPaneA],
+      ['facebook', 'Aperçu Facebook', previewPaneB],
+    ];
+    tabSpecs.forEach(([key, label, pane], index) => {
+      const btn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'review-tab',
+          role: 'tab',
+          'aria-selected': index === 0 ? 'true' : 'false',
+          onclick: () => {
+            tabSpecs.forEach(([, , p], j) => {
+              p.hidden = j !== index;
+            });
+            tabsBar.querySelectorAll('.review-tab').forEach((t, j) => {
+              t.setAttribute('aria-selected', j === index ? 'true' : 'false');
+            });
+            if (key === 'instagram' || key === 'facebook') renderSocialPreviewPane(key, pane);
+          },
+        },
+        label,
+      );
+      tabsBar.append(btn);
+    });
   }
+
   if (!publishedBlog) add('alt', 'Description accessible du visuel', 'textarea', { rows: 2 });
   const when = field(
     'Publication · heure de Paris',
@@ -1174,7 +1578,7 @@ function openItem(item) {
   }
   when.input.addEventListener('input', updateTimingWarning);
   updateTimingWarning();
-  if (item.status !== 'managed' && !publishedBlog) fields.append(when.label);
+  if (item.status !== 'managed' && !publishedBlog) editPane.append(when.label);
   const sources = el(
     'section',
     { class: 'sources' },
@@ -1204,15 +1608,15 @@ function openItem(item) {
           'Aucune source jointe. Vérifiez les affirmations avant de valider.',
         ),
   );
-  fields.append(sources);
-  if (content.editorial_notes?.length) fields.append(el('details', { class: 'sources' },
+  editPane.append(sources);
+  if (content.editorial_notes?.length) editPane.append(el('details', { class: 'sources' },
     el('summary', {}, 'Remarques de rédaction · sans blocage'),
     el('ul', {}, content.editorial_notes.map((note) => el('li', {}, note))),
   ));
   if (item.error)
-    fields.append(el('div', { class: 'notice error' }, item.error));
+    editPane.append(el('div', { class: 'notice error' }, item.error));
   if (item.deliveries?.length)
-    fields.append(
+    editPane.append(
       el(
         'section',
         { class: 'sources' },
@@ -1229,16 +1633,17 @@ function openItem(item) {
   const linkedArticle = item.companion_article;
   const createBlog = el('input', { type: 'checkbox', checked: linkedArticle ? linkedArticle.state === 'active' : item.blog_requested === true, disabled: item.status !== 'review' || linkedArticle?.status === 'published' });
   if (item.kind === 'social') {
-    if (linkedArticle) fields.append(el('section', { class: 'sources' },
+    if (linkedArticle) editPane.append(el('section', { class: 'sources' },
       el('h3', {}, 'Article associé'),
       el('p', { class: 'hint' }, labels[linkedArticle.status] || linkedArticle.status),
       linkedArticle.error ? el('p', { class: 'notice error' }, linkedArticle.error) : null,
       el('a', { href: `/editorial/?conversation=${encodeURIComponent(linkedArticle.conversation_id)}&item=${encodeURIComponent(linkedArticle.article_id)}#discussion` }, 'Ouvrir l’article')));
-    if (linkedArticle?.status !== 'published') fields.append(el('section', { class: 'sources' },
+    if (linkedArticle?.status !== 'published') editPane.append(el('section', { class: 'sources' },
       el('label', { class: 'review-check' }, createBlog, 'Créer aussi un article de blog'),
       el('p', { class: 'hint' }, 'En validant ce post avec cette case cochée, j’autorise la rédaction et la publication de l’article associé sur planetelaser.fr, sans deuxième validation. L’article sera publié dès qu’il sera rédigé et illustré, même si le post est programmé plus tard.')));
   }
-  if (item.derived_from_post && !publishedBlog) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
+  if (item.derived_from_post && !publishedBlog) editPane.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
+
   const save = el(
     'button',
     { class: 'button secondary review-save', type: 'button', disabled: true },
@@ -1267,6 +1672,14 @@ function openItem(item) {
     },
     'Refuser',
   );
+  const delDraft = el(
+    'button',
+    {
+      class: 'button danger',
+      type: 'button',
+    },
+    'Supprimer',
+  );
   const error = el('div', {
     class: 'dialog-error notice error',
     role: 'alert',
@@ -1277,12 +1690,26 @@ function openItem(item) {
     { class: 'button primary', type: 'button', disabled: true },
     'Mettre à jour sur le site',
   );
-  const publishedHint = 'Modifiez le texte et ses liens. La correction sera visible sur la même page.';
+  const publishedHint = 'Modifiez le texte, le titre ou les balises SEO. La mise à jour sera publiée sur la même page.';
   const publishedStatus = el('p', { class: 'hint', role: 'status' }, publishedHint);
+  function currentPublishedState() {
+    return {
+      title: inputs.title.value,
+      category: inputs.category.value,
+      seo_title: inputs.seo_title.value,
+      seo_description: inputs.seo_description.value,
+      tags: formatTags(parseTags(inputs.tags.value)),
+      excerpt: inputs.excerpt.value,
+      markdown: inputs.markdown.value,
+    };
+  }
   function syncPublishedEditor() {
-    const markdown = inputs.markdown.value;
-    state.dirty = markdown !== savedMarkdown;
-    updatePublished.disabled = state.pending || !state.dirty || !markdown.trim();
+    const cur = currentPublishedState();
+    state.dirty = Boolean(
+      savedPublishedState &&
+      Object.keys(savedPublishedState).some((k) => cur[k] !== savedPublishedState[k]),
+    );
+    updatePublished.disabled = state.pending || !state.dirty || !cur.markdown.trim();
   }
   function markDirty() {
     if (publishedBlog) {
@@ -1298,47 +1725,53 @@ function openItem(item) {
   }
   // The approval click is the owner's confirmation; image loading is not a gate.
   approve.disabled = state.dirty || item.status !== 'review';
+
   updatePublished.onclick = async () => {
     if (state.pending || updatePublished.disabled) return;
-    const editor = inputs.markdown;
+    const editableKeys = ['title', 'category', 'seo_title', 'seo_description', 'tags', 'excerpt', 'markdown'];
     error.hidden = true;
-    editor.readOnly = true;
+    editableKeys.forEach((k) => { if (inputs[k]) inputs[k].disabled = true; });
     try {
       await action(updatePublished, async () => {
         const { item: updated } = await api(`/items/${encodeURIComponent(item.id)}/update-published`, {
           revision: state.item.revision,
-          markdown: editor.value,
+          markdown: inputs.markdown.value,
+          title: inputs.title.value,
+          category: inputs.category.value,
+          seo_title: inputs.seo_title.value,
+          seo_description: inputs.seo_description.value,
+          tags: parseTags(inputs.tags.value),
+          excerpt: inputs.excerpt.value,
         });
         state.item = updated;
-        editor.value = updated.content.markdown;
-        savedMarkdown = editor.value;
+        inputs.title.value = updated.content.title || '';
+        inputs.category.value = updated.content.category || 'guides';
+        inputs.seo_title.value = updated.content.seo_title || '';
+        inputs.seo_description.value = updated.content.seo_description || '';
+        inputs.tags.value = formatTags(updated.content.tags);
+        inputs.excerpt.value = updated.content.excerpt || '';
+        inputs.markdown.value = updated.content.markdown || '';
+        savedPublishedState = currentPublishedState();
         updateMarkdownPreview();
         publishedStatus.textContent = 'Correction enregistrée. Le site peut prendre une minute pour afficher la nouvelle version.';
         await refresh(true);
       });
     } finally {
-      editor.readOnly = false;
+      editableKeys.forEach((k) => { if (inputs[k]) inputs[k].disabled = false; });
       syncPublishedEditor();
     }
   };
   save.onclick = () =>
     action(save, async () => {
-      Object.entries(inputs).forEach(([k, v]) => (content[k] = v.value));
+      Object.entries(inputs).forEach(([k, v]) => {
+        content[k] = k === 'tags' ? parseTags(v.value) : v.value;
+      });
       await api(`/items/${encodeURIComponent(item.id)}/save`, {
-        revision: item.revision,
+        revision: state.item.revision,
         content,
         scheduled_at: parisIso(when.input.value),
       });
-      state.dirty = false;
-      dialog.close();
-      await refresh(true);
-      await window.refreshChat?.();
-      await window.refreshContents?.(true);
-      const updated = await api(`/contents/${encodeURIComponent(item.id)}`);
-      openItem(updated);
-      toast(
-        'Modifications enregistrées. Relisez cette nouvelle version avant de l’approuver.',
-      );
+      await reloadReviewItem('Modifications enregistrées. Relisez cette nouvelle version avant de l’approuver.');
     });
   approve.onclick = () =>
     action(approve, async () => {
@@ -1349,11 +1782,11 @@ function openItem(item) {
           'Choisissez une date au moins cinq minutes dans le futur, enregistrez puis validez cette nouvelle version.',
         );
       await api(`/items/${encodeURIComponent(item.id)}/approve`, {
-        revision: item.revision,
+        revision: state.item.revision,
         create_blog: item.kind === 'social' && createBlog.checked,
       });
       state.dirty = false;
-      dialog.close();
+      closeReview();
       await refresh(true);
       await window.refreshChat?.();
       await window.refreshContents?.(true);
@@ -1362,15 +1795,39 @@ function openItem(item) {
   retry.onclick = () =>
     action(retry, async () => {
       await api(`/items/${encodeURIComponent(item.id)}/retry`, {
-        revision: item.revision,
+        revision: state.item.revision,
       });
       state.dirty = false;
-      dialog.close();
+      closeReview();
       await refresh(true);
       await window.refreshChat?.();
       await window.refreshContents?.(true);
       toast('La préparation de ce contenu est relancée.');
     });
+  let delArmTimer = null;
+  delDraft.onclick = () => {
+    if (!delDraft.dataset.armed) {
+      delDraft.dataset.armed = '1';
+      delDraft.textContent = 'Confirmer suppression ?';
+      delArmTimer = setTimeout(() => {
+        delete delDraft.dataset.armed;
+        delDraft.textContent = 'Supprimer';
+      }, 4000);
+      return;
+    }
+    clearTimeout(delArmTimer);
+    action(delDraft, async () => {
+      await api(`/items/${encodeURIComponent(item.id)}/delete`, {
+        revision: state.item.revision,
+      });
+      state.dirty = false;
+      closeReview();
+      await refresh(true);
+      await window.refreshChat?.();
+      await window.refreshContents?.(true);
+      toast('Brouillon supprimé.');
+    });
+  };
   reject.onclick = () => {
     const reason = el('textarea', {
       rows: 3,
@@ -1386,18 +1843,18 @@ function openItem(item) {
     confirm.onclick = () =>
       action(confirm, async () => {
         await api(`/items/${encodeURIComponent(item.id)}/reject`, {
-          revision: item.revision,
+          revision: state.item.revision,
           note: reason.value,
         });
         state.dirty = false;
-        dialog.close();
+        closeReview();
         await refresh(true);
         await window.refreshChat?.();
         await window.refreshContents?.(true);
         toast('Contenu refusé. Il ne sera pas publié.');
       });
     reject.disabled = true;
-    fields.append(
+    editPane.append(
       el(
         'section',
         { class: 'sources' },
@@ -1406,6 +1863,7 @@ function openItem(item) {
         confirm,
       ),
     );
+    tabsBar.querySelector('.review-tab')?.click();
     reason.focus();
   };
   const footer = el(
@@ -1436,6 +1894,7 @@ function openItem(item) {
       ...(inCalendar ? [el('a', { href: '/launches', class: 'button primary' }, 'Ouvrir le calendrier')] : []),
       ...(blogUrl ? [el('a', { href: blogUrl, target: '_blank', rel: 'noopener noreferrer', class: 'button secondary' }, 'Voir l’article publié ↗')] : []),
       ...(publishedBlog ? [updatePublished] : []),
+      ...(deletable ? [delDraft] : []),
       ...(!immutable
         ? [
             ...(item.status !== 'rejected' ? [reject] : []),
@@ -1454,6 +1913,37 @@ function openItem(item) {
     el('div', { class: 'review-grid' }, media, fields),
     footer,
   );
+  window._reviewKeyHandler = (ev) => {
+    if (!dialog.open) return;
+    if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); navigateQueue(-1); }
+    else if (ev.altKey && ev.key === 'ArrowRight') { ev.preventDefault(); navigateQueue(1); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+      ev.preventDefault();
+      if (publishedBlog && !updatePublished.disabled) updatePublished.click();
+      else if (!immutable && !save.disabled) save.click();
+    }
+  };
+  document.addEventListener('keydown', window._reviewKeyHandler);
+  if (['queued', 'generating', 'rendering'].includes(item.status)) {
+    window._reviewPollTimer = setInterval(async () => {
+      if (!dialog.open || state.pending || state.item?.id !== item.id) return;
+      try {
+        const fresh = await api(`/contents/${encodeURIComponent(item.id)}`);
+        if (
+          dialog.open &&
+          state.item?.id === item.id &&
+          (fresh.status !== item.status || fresh.revision !== item.revision)
+        ) {
+          await refresh(true);
+          await window.refreshChat?.();
+          await window.refreshContents?.(true);
+          state.dirty = false;
+          openItem(fresh, state.queue);
+          toast('Contenu mis à jour.');
+        }
+      } catch {}
+    }, 4000);
+  }
   if (!dialog.open) dialog.showModal();
 }
 function closeReview() {
@@ -1463,6 +1953,14 @@ function closeReview() {
     !window.confirm('Fermer sans enregistrer vos modifications ?')
   )
     return;
+  if (window._reviewKeyHandler) {
+    document.removeEventListener('keydown', window._reviewKeyHandler);
+    window._reviewKeyHandler = null;
+  }
+  if (window._reviewPollTimer) {
+    clearInterval(window._reviewPollTimer);
+    window._reviewPollTimer = null;
+  }
   state.dirty = false;
   state.item = null;
   $('item-dialog').close();
@@ -1470,8 +1968,82 @@ function closeReview() {
 }
 function openRequest() {
   $('request-dialog').querySelector('.dialog-error').hidden = true;
+  if ($('catalogue-search')) $('catalogue-search').value = '';
+  if ($('catalogue-results')) {
+    $('catalogue-results').replaceChildren();
+    $('catalogue-results').hidden = true;
+  }
   $('request-dialog').showModal();
 }
+let catalogueTimer = null;
+let catalogueSeq = 0;
+$('catalogue-search')?.addEventListener('input', (e) => {
+  clearTimeout(catalogueTimer);
+  const q = e.target.value.trim();
+  const box = $('catalogue-results');
+  if (!box) return;
+  if (q.length < 2) {
+    box.replaceChildren();
+    box.hidden = true;
+    return;
+  }
+  catalogueTimer = setTimeout(async () => {
+    const seq = ++catalogueSeq;
+    try {
+      const data = await api(`/catalogue?q=${encodeURIComponent(q)}&limit=8`);
+      if (seq !== catalogueSeq) return;
+      const products = Array.isArray(data.products) ? data.products : [];
+      if (!products.length) {
+        box.replaceChildren(el('p', { class: 'hint' }, 'Aucun produit correspondant dans le catalogue.'));
+        box.hidden = false;
+        return;
+      }
+      box.replaceChildren(
+        ...products.map((p) => {
+          const thumb = safeUrl(p.thumbnail);
+          const priceLabel = p.price != null ? `${p.price} €` : (p.price_from != null ? `Dès ${p.price_from} €` : 'Prix N/C');
+          const stockLabel = p.available ? 'En stock' : 'Rupture';
+          return el(
+            'button',
+            {
+              type: 'button',
+              class: 'catalogue-item',
+              onclick: () => {
+                const form = $('request-form');
+                form.elements.query.value = p.ean ? `${p.title} (${p.ean})` : p.title;
+                form.elements.price_mode.value = 'catalogue';
+                $('price-mode').onchange();
+                box.replaceChildren();
+                box.hidden = true;
+                $('catalogue-search').value = '';
+                form.elements.note.focus();
+              },
+            },
+            thumb ? el('img', { src: thumb, alt: '', loading: 'lazy' }) : null,
+            el(
+              'div',
+              { class: 'catalogue-item-info' },
+              el('div', { class: 'catalogue-item-title' }, p.title),
+              el(
+                'div',
+                { class: 'catalogue-item-meta' },
+                p.ean ? el('span', {}, `EAN ${p.ean}`) : null,
+                p.category ? el('span', {}, p.category) : null,
+                el('span', {}, `${priceLabel} · ${stockLabel}`),
+              ),
+            ),
+          );
+        }),
+      );
+      box.hidden = false;
+    } catch {
+      if (seq === catalogueSeq) {
+        box.replaceChildren();
+        box.hidden = true;
+      }
+    }
+  }, 240);
+});
 $('request-open').onclick = openRequest;
 $('request-open-bottom').onclick = openRequest;
 document
@@ -1493,6 +2065,11 @@ $('request-form').onsubmit = (e) => {
     await api('/requests', body);
     $('request-dialog').close();
     e.target.reset();
+    if ($('catalogue-search')) $('catalogue-search').value = '';
+    if ($('catalogue-results')) {
+      $('catalogue-results').replaceChildren();
+      $('catalogue-results').hidden = true;
+    }
     $('custom-price').hidden = true;
     $('custom-price').querySelector('input').required = false;
     await refresh();

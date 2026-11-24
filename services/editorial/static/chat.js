@@ -76,6 +76,43 @@ async function loadDiscussions() {
   $('chat-history').replaceChildren(...result.conversations.map(c=>el('option',{value:c.id},c.title)));
   if(!chat.id) chat.id=result.conversations[0]?.id || null;
   $('chat-history').value=chat.id || '';
+  const sidebarList=$('chat-sidebar-list');
+  if(sidebarList){
+    sidebarList.replaceChildren(...result.conversations.map(c=>{
+      const active=c.id===chat.id;
+      const btn=el('button',{},c.title||'Discussion');
+      btn.type='button';
+      btn.className=active?'chat-sidebar-item is-active':'chat-sidebar-item';
+      btn.setAttribute('aria-current',active?'true':'false');
+      btn.dataset.conversationId=c.id;
+      btn.onclick=()=>{
+        if(chat.id===c.id)return;
+        const select=$('chat-history');
+        if(!select)return;
+        select.value=c.id;
+        select.dispatchEvent(new Event('change'));
+      };
+      return btn;
+    }));
+  }
+  const sidebarNew=$('chat-sidebar-new');
+  if(sidebarNew&&!sidebarNew.dataset.bound){
+    sidebarNew.dataset.bound='1';
+    sidebarNew.onclick=()=>$('chat-new')?.click();
+  }
+  const historySelect=$('chat-history');
+  if(historySelect&&!historySelect.dataset.sidebarSynced){
+    historySelect.dataset.sidebarSynced='1';
+    historySelect.addEventListener('change',()=>{
+      const list=$('chat-sidebar-list');
+      if(!list)return;
+      for(const node of list.children){
+        const isCurrent=node.dataset?.conversationId===historySelect.value;
+        node.classList.toggle('is-active',isCurrent);
+        node.setAttribute('aria-current',isCurrent?'true':'false');
+      }
+    });
+  }
   chat.voiceAvailable=Boolean(result.voice && navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
   $('chat-mic').disabled=!chat.voiceAvailable || (chat.voiceBusy && !chat.recorder);
   if(!chat.voiceAvailable) $('chat-voice-status').textContent='Micro indisponible. Vous pouvez écrire votre message.';

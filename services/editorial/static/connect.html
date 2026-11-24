@@ -1,1 +1,131 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecter Grok Bot · Planète Laser</title><script src="/editorial/static/embed.js?v=native-1"></script><link rel="stylesheet" href="/editorial/static/style.css"><link rel="stylesheet" href="/editorial/static/connect.css"><link rel="stylesheet" href="/editorial/static/embed.css?v=native-1"><script src="/editorial/static/connect.js?v=multi-agent-1" defer></script></head><body><main class="connect-page"><a href="/editorial/">← Retour au studio</a><h1>Connecter Grok Bot</h1><p>Parlez à votre Bot. Il peut écrire lui-même les posts, préparer les articles et visuels avec Codex, et gérer les textes, médias et horaires du calendrier Postiz. Le Bot vous montre les textes, les visuels et la date. Après votre accord explicite, il transmet la validation et programme la publication.</p><p id="connection-state" role="status">Vérification de votre connexion…</p><p id="connection-error" class="notice error" role="alert" hidden></p><section><h2>1. Ajouter le connecteur</h2><p>Dans Grok Bot, ajoutez un serveur MCP personnalisé distant (HTTPS), nommé <strong>Planète Laser Studio</strong>.</p><label for="mcp-url">Adresse du serveur</label><input id="mcp-url" readonly><button type="button" id="copy-url" class="button secondary" disabled>Copier l’adresse</button><p>Ajoutez l’en-tête <strong>Authorization</strong> avec la valeur privée générée ci-dessous. Collez-la dans le réglage secret du connecteur.</p><button type="button" id="rotate-key" class="button primary" disabled>Créer une clé de connexion</button><div id="key-result" hidden><label for="mcp-key">Valeur de l’en-tête Authorization · affichée une seule fois</label><input id="mcp-key" type="password" readonly autocomplete="off"><button type="button" id="copy-key" class="button secondary">Copier la valeur privée</button><p>Cette clé donne accès au calendrier, aux contenus, aux médias et aux statistiques Postiz. Le Bot peut créer et modifier les brouillons ; il transmet votre accord explicite après aperçu pour les publications. Le Bot peut alors programmer le post et lancer son article associé, publié dès qu’il est prêt.</p></div></section><section><h2>Ajouter un agent indépendant</h2><p>Créez une clé indépendante sans remplacer celle de Grok. Elle donne les mêmes droits que Grok sur les contenus, les médias et le calendrier, et s’affiche une seule fois.</p><p>Cette clé est destinée aux clients MCP acceptant un en-tête Authorization Bearer. La compatibilité du connecteur personnalisé Dots avec ce type de clé reste à vérifier.</p><label for="new-key-label">Nom de l’agent</label><input id="new-key-label" maxlength="80" value="Dot"><button type="button" id="create-agent-key" class="button primary" disabled>Créer une clé indépendante</button><div id="new-key-result" hidden><label for="new-mcp-key">Valeur de l’en-tête Authorization · affichée une seule fois</label><input id="new-mcp-key" type="password" readonly autocomplete="off"><button type="button" id="copy-new-key" class="button secondary">Copier la valeur privée</button><p>Conservez cette clé dans le réglage secret du client. Elle ne pourra plus être affichée après fermeture de cette page.</p></div><div id="agent-key-list" aria-live="polite"></div></section><section><h2>2. Donner son rôle au Bot</h2><p>Copiez ces instructions dans votre Bot Planète Laser. Demandez-lui ensuite d’appeler <strong>get_editorial_context</strong> pour vérifier la connexion.</p><label for="bot-instructions">Instructions du community manager</label><textarea id="bot-instructions" readonly rows="8"></textarea><button type="button" id="copy-instructions" class="button secondary" disabled>Copier les instructions</button><p>Le programme hebdomadaire reste géré par le studio : 7 sujets, dont au moins 3 produits, et 1 article. Les demandes ponctuelles s’ajoutent au planning.</p></section><details><summary>Gérer l’accès</summary><p>Révoquer bloque immédiatement les nouveaux appels. Les brouillons déjà préparés restent disponibles.</p><button type="button" id="revoke-key" class="button secondary" disabled>Révoquer l’accès</button></details></main></body></html>
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Règles &amp; Grok Bot · Planète Laser</title>
+    <script src="/editorial/static/embed.js?v=v2-1"></script>
+    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-1" />
+    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-1" />
+    <link rel="stylesheet" href="/editorial/static/connect.css?v=v2-1" />
+    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-1" />
+    <script src="/editorial/static/connect.js?v=v2-1" defer></script>
+  </head>
+  <body>
+    <main class="connect-page connect-v2">
+      <div class="connect-top">
+        <a href="/editorial/">← Retour au studio</a>
+        <h1>Règles &amp; Grok Bot</h1>
+        <p class="muted">
+          Personnalisez les consignes éditoriales suivies par le Studio et Grok Bot, suivez son activité en direct et gérez les clés MCP. Aucune publication sociale ne part sans votre accord explicite.
+        </p>
+        <p id="connection-state" role="status">Vérification de votre connexion…</p>
+        <p id="connection-error" class="notice error" role="alert" hidden></p>
+      </div>
+
+      <section class="connect-card" aria-labelledby="rules-heading">
+        <h2 id="rules-heading">1. Règles éditoriales du magasin</h2>
+        <p class="hint">
+          Ces consignes sont injectées automatiquement dans Codex et dans les instructions retournées à Grok Bot.
+        </p>
+        <label for="rules-custom-instructions">Consignes permanentes (ton, priorités, à éviter)</label>
+        <textarea
+          id="rules-custom-instructions"
+          rows="4"
+          maxlength="4000"
+          placeholder="Ex. Toujours mentionner la possibilité d’essai au magasin à Forbach, éviter le jargon trop technique sur les posts débutants…"
+        ></textarea>
+        <div class="connect-grid-2">
+          <label for="rules-default-template">
+            Gabarit visuel par défaut
+            <select id="rules-default-template">
+              <option value="classic">Classique (logo + bandeau)</option>
+              <option value="minimal">Plein cadre épuré</option>
+              <option value="raw">Photo brute (sans cadre)</option>
+              <option value="tip_card">Carte conseil typo</option>
+            </select>
+          </label>
+          <label for="rules-signature-note">
+            Signature magasin
+            <input
+              id="rules-signature-note"
+              maxlength="200"
+              placeholder="Ex. Planète Laser · Forbach · conseil &amp; essai"
+            />
+          </label>
+        </div>
+        <label class="review-check" for="rules-weekly-blog-link">
+          <input type="checkbox" id="rules-weekly-blog-link" />
+          Associer un lien vers le blog ou un article complémentaire au plan hebdomadaire
+        </label>
+        <div class="connect-actions">
+          <button type="button" id="save-rules" class="button primary">Enregistrer les règles</button>
+          <span id="rules-status" class="hint" role="status"></span>
+        </div>
+      </section>
+
+      <section class="connect-card" aria-labelledby="activity-heading">
+        <h2 id="activity-heading">2. Activité récente</h2>
+        <div id="activity-stats" class="pill-row"></div>
+        <div id="activity-list" class="connect-activity-list" aria-live="polite"></div>
+      </section>
+
+      <section class="connect-card" aria-labelledby="mcp-heading">
+        <h2 id="mcp-heading">3. Connexion MCP &amp; Clés d’accès</h2>
+        <p>
+          Dans Grok Bot, ajoutez un serveur MCP personnalisé distant (HTTPS), nommé
+          <strong>Planète Laser Studio</strong>.
+        </p>
+        <label for="mcp-url">Adresse du serveur</label>
+        <input id="mcp-url" readonly />
+        <button type="button" id="copy-url" class="button secondary" disabled>Copier l’adresse</button>
+        <p>
+          Ajoutez l’en-tête <strong>Authorization</strong> avec la valeur privée générée ci-dessous. Collez-la dans le réglage secret du connecteur.
+        </p>
+        <button type="button" id="rotate-key" class="button primary" disabled>Créer une clé de connexion</button>
+        <div id="key-result" hidden>
+          <label for="mcp-key">Valeur de l’en-tête Authorization · affichée une seule fois</label>
+          <input id="mcp-key" type="password" readonly autocomplete="off" />
+          <button type="button" id="copy-key" class="button secondary">Copier la valeur privée</button>
+          <p class="hint">
+            Cette clé donne accès au catalogue, aux brouillons, aux médias, au plan de semaine et au calendrier Postiz. Les publications sociales restent soumises à votre confirmation explicite après aperçu.
+          </p>
+        </div>
+
+        <hr class="connect-divider" />
+        <h3>Ajouter un agent indépendant</h3>
+        <p class="hint">
+          Créez une clé indépendante sans remplacer celle de Grok. Elle donne les mêmes droits et s’affiche une seule fois.
+        </p>
+        <label for="new-key-label">Nom de l’agent</label>
+        <input id="new-key-label" maxlength="80" value="Dot" />
+        <button type="button" id="create-agent-key" class="button primary" disabled>Créer une clé indépendante</button>
+        <div id="new-key-result" hidden>
+          <label for="new-mcp-key">Valeur de l’en-tête Authorization · affichée une seule fois</label>
+          <input id="new-mcp-key" type="password" readonly autocomplete="off" />
+          <button type="button" id="copy-new-key" class="button secondary">Copier la valeur privée</button>
+          <p class="hint">
+            Conservez cette clé dans le réglage secret du client. Elle ne pourra plus être affichée après fermeture de cette page.
+          </p>
+        </div>
+        <div id="agent-key-list" aria-live="polite"></div>
+
+        <hr class="connect-divider" />
+        <h3>Donner son rôle au Bot</h3>
+        <p class="hint">
+          Copiez ces instructions dans votre Bot Planète Laser. Demandez-lui ensuite d’appeler
+          <strong>get_editorial_context</strong> pour vérifier la connexion.
+        </p>
+        <label for="bot-instructions">Instructions du community manager</label>
+        <textarea id="bot-instructions" readonly rows="8"></textarea>
+        <button type="button" id="copy-instructions" class="button secondary" disabled>Copier les instructions</button>
+
+        <details>
+          <summary>Gérer l’accès</summary>
+          <p class="hint">Révoquer bloque immédiatement les nouveaux appels. Les brouillons déjà préparés restent disponibles.</p>
+          <button type="button" id="revoke-key" class="button secondary" disabled>Révoquer l’accès</button>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>

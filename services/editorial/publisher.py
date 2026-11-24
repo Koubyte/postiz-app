@@ -27,7 +27,12 @@ class Publisher:
                 if available_slot(item['scheduled_at'],occupied+reservations(db,item['id']))!=item['scheduled_at']:
                     raise Conflict('Le calendrier a changé : un autre sujet est à moins de deux heures. Choisissez un nouvel horaire et validez à nouveau.')
         for key,expected in item['media'].get('hashes',{}).items():
-            path=self.store.root/'media'/item['media'][key]
+            if key.startswith('carousel_'):
+                try:filename=(item['media'].get('carousel_media') or [])[int(key.split('_',1)[1])]
+                except (ValueError,IndexError):raise Conflict('Un média carrousel manque après validation.')
+            else:filename=item['media'].get(key)
+            if not filename:raise Conflict('Un média manque après validation.')
+            path=self.store.root/'media'/filename
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:raise Conflict('Un média a changé après validation.')
         product=item['media'].get('product_snapshot')
         if product and not product.get('external'):
@@ -52,7 +57,9 @@ class Publisher:
             db.execute("UPDATE items SET status='publishing' WHERE id=?",(id,))
         if item['kind']=='blog':
             c=item['content'];base=os.environ['PUBLIC_URL'].rstrip('/')
-            body={'slug':c['slug'],'title':c['title'],'excerpt':c['excerpt'],'content':c['markdown'],'category':c['category'],'tags':[],'imageUrl':base+'/editorial/public/media/'+item['media']['blog_media'],'imageAlt':c.get('alt',c['title']),'published':True,'createdAt':now(),'updatedAt':now()}
+            body={'slug':c['slug'],'title':c['title'],'excerpt':c['excerpt'],'content':c['markdown'],'category':c['category'],'tags':c.get('tags',[]),'imageUrl':base+'/editorial/public/media/'+item['media']['blog_media'],'imageAlt':c.get('alt',c['title']),'published':True,'createdAt':now(),'updatedAt':now()}
+            if c.get('seo_title'):body['seoTitle']=c['seo_title']
+            if c.get('seo_description'):body['seoDescription']=c['seo_description']
             with self.store.db() as db:
                 # Recheck the parent consent in the same transaction as publication.
                 from companion import check_publication
@@ -70,15 +77,20 @@ class Publisher:
             target=channels[channel]
             if not any(i['id']==target and i['identifier']==channel and not i.get('disabled') for i in integrations):raise Conflict('Le canal '+channel+' n’est pas connecté.')
         # Media upload does not publish a post. The file is copied into Postiz storage.
-        with open(self.store.root/'media'/item['media']['media'],'rb') as file:
-            media=self.api('POST','/upload',files={'file':(item['media']['media'],file,'image/png')})
+        carousel_files=item['media'].get('carousel_media') if isinstance(item['media'].get('carousel_media'),list) and len(item['media'].get('carousel_media'))>=2 else None
+        filenames=carousel_files or [item['media']['media']]
+        uploaded=[]
+        for fname in filenames:
+            with open(self.store.root/'media'/fname,'rb') as file:
+                media=self.api('POST','/upload',files={'file':(fname,file,'image/png')})
+                uploaded.append({'id':media['id'],'path':media['path'],'alt':item['content'].get('alt','')})
         for channel in ('facebook','instagram'):
             delivery_id=uid()
             with self.store.db() as db:
                 if db.execute('SELECT 1 FROM deliveries WHERE item_id=? AND revision=? AND channel=?',(id,item['revision'],channel)).fetchone():continue
                 if db.execute("SELECT value FROM settings WHERE key='paused'").fetchone()[0]=='true':raise Conflict('Publication suspendue. Vérifiez les livraisons déjà engagées avant reprise.')
                 db.execute("INSERT INTO deliveries VALUES(?,?,?,?,'sending','{}',?)",(delivery_id,id,item['revision'],channel,now()))
-            payload={'type':'schedule' if due>datetime.now(timezone.utc) else 'now','shortLink':False,'date':item['scheduled_at'],'tags':[],'posts':[{'integration':{'id':channels[channel]},'value':[{'content':item['content'][channel],'image':[{'id':media['id'],'path':media['path'],'alt':item['content'].get('alt','')}]}],'settings':{'__type':channel,'post_type':'post'}}]}
+            payload={'type':'schedule' if due>datetime.now(timezone.utc) else 'now','shortLink':False,'date':item['scheduled_at'],'tags':[],'posts':[{'integration':{'id':channels[channel]},'value':[{'content':item['content'][channel],'image':uploaded}],'settings':{'__type':channel,'post_type':'post'}}]}
             try:
                 result=self.api('POST','/posts',json=payload)
                 entries=result if isinstance(result,list) else [result]

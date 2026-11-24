@@ -57,10 +57,10 @@ def work(chat_only=False):
             if job['kind'] in STRATEGY_JOBS:strategy.started(db,job['kind'],job['target'])
             if job['kind']=='plan':db.execute("UPDATE weeks SET status='preparing' WHERE id=?",(job['target'],))
             if job['kind'] in ('render','demand_render'):db.execute("UPDATE items SET status='rendering' WHERE id=?",(job['target'],))
-            if job['kind'] in ('draft','demand','companion'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
+            if job['kind'] in ('draft','draft_text','demand','companion'):db.execute("UPDATE items SET status='generating' WHERE id=? AND status IN ('queued','failed')",(job['target'],))
         try:
             if job['kind'] in STRATEGY_JOBS:strategy.run(job['kind'],job['target'])
-            else:{'plan':generator.plan,'draft':generator.draft,'render':generator.render,'demand_render':render_demand,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
+            else:{'plan':generator.plan,'draft':generator.draft,'draft_text':lambda target:generator.draft(target,text_only=True),'render':generator.render,'demand_render':render_demand,'revise':generator.revise,'chat':conversation.answer,'demand':conversation.draft,'companion':companion.run}[job['kind']](job['target'])
             with store.db() as db:
                 db.execute("UPDATE jobs SET status='done',updated=? WHERE id=?",(now(),job['id']))
                 db.execute("UPDATE weeks SET status='review' WHERE status='generating' AND EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id) AND NOT EXISTS(SELECT 1 FROM items WHERE week_id=weeks.id AND status IN ('queued','generating','rendering'))")
@@ -172,7 +172,12 @@ def date(value):
 
 def editable_content(value,item):
     if not isinstance(value,dict):raise Conflict('Contenu invalide.')
-    merged={**item['content'],**{k:v for k,v in value.items() if k in ('title','headline','facebook','instagram','markdown','excerpt','slug','category','alt','sources')}}
+    allowed_input=('title','headline','facebook','instagram','markdown','excerpt','slug','category','alt','sources','seo_title','seo_description','tags','template','carousel_slides','visual_instructions')
+    merged={**item['content'],**{k:v for k,v in value.items() if k in allowed_input}}
+    if 'visual_instructions' in merged:
+        vi=str(merged['visual_instructions'] or '').strip()[:2000]
+        if vi:merged['visual_instructions']=vi
+        else:merged.pop('visual_instructions',None)
     # Do not flag a catalogue price that was already injected by the studio.
     checked=dict(merged)
     price=item['content'].get('price_text')
@@ -180,8 +185,10 @@ def editable_content(value,item):
         for field in ('facebook','instagram','markdown'):
             if field in checked:checked[field]=checked[field].replace('Prix : '+price+'.','').replace('Prix Planète Laser : '+price+'.','')
     checked=validate_content(checked,item['kind'])
-    for key in ('title','headline','excerpt','slug','category','alt','sources'):
+    for key in ('title','headline','excerpt','slug','category','alt','sources','seo_title','seo_description','tags','template','carousel_slides'):
         if key in checked:merged[key]=checked[key]
+    for key in ('seo_title','seo_description','tags','carousel_slides','visual_instructions'):
+        if key in value and key not in checked and not merged.get(key):merged.pop(key,None)
     merged['editorial_notes']=list(dict.fromkeys(item['content'].get('editorial_notes',[])+checked['editorial_notes']))
     return merged
 
@@ -217,19 +224,41 @@ async def state(request:Request):
 @app.post('/editorial/api/requests')
 async def add_request(request:Request):
     who=await actor(request);data=await body(request)
-    query=str(data.get('query','')).strip();note=str(data.get('note','')).strip()
-    mode=data.get('price_mode','hide');price=data.get('price')
-    if not query or len(query)>500 or len(note)>3000 or mode not in ('hide','catalogue','custom'):raise Conflict('Demande invalide.')
-    if mode=='custom':
-        try:
-            price=float(price)
-            if not 0<price<100000:raise ValueError()
-        except (TypeError,ValueError):raise Conflict('Indiquez un prix TTC positif.')
-    else:price=None
+    return {'id':store.add_request(data.get('query',''),data.get('note',''),data.get('price_mode','hide'),data.get('price'),data.get('priority','normal'),who)}
+
+@app.post('/editorial/api/requests/{id}/delete')
+async def delete_request(id:str,request:Request):
+    who=await actor(request);await body(request)
+    store.delete_request(id,who)
+    return {'ok':True}
+
+@app.get('/editorial/api/catalogue')
+async def search_catalogue_api(request:Request,q:str=Query('',max_length=300),category:str=Query('',max_length=120),in_stock:bool=False,limit:int=Query(12,ge=1,le=50)):
+    await actor(request)
+    return await asyncio.to_thread(agent_service.search_catalogue,q,category,in_stock,None,None,limit)
+
+@app.get('/editorial/api/rules')
+async def get_rules_api(request:Request):
+    await actor(request)
+    return store.get_rules()
+
+@app.post('/editorial/api/rules')
+async def save_rules_api(request:Request):
+    who=await actor(request);data=await body(request)
+    return store.save_rules(data,who)
+
+@app.get('/editorial/api/agent-activity')
+async def agent_activity_api(request:Request):
+    await actor(request)
     with store.db() as db:
-        if db.execute("SELECT count(*) FROM requests WHERE status='pending'").fetchone()[0]>=50:raise Conflict('La file contient déjà cinquante demandes.')
-        id=uid();db.execute('INSERT INTO requests(id,query,note,price_mode,price,priority,created) VALUES(?,?,?,?,?,?,?)',(id,query,note,mode,price,1 if data.get('priority') in ('high',1) else 0,now()));store.event(db,'Demande de mise en avant ajoutée.',who)
-    return {'id':id}
+        events=[dict(r) for r in db.execute("SELECT id,created,message,actor FROM events WHERE actor IN ('grok-agent','owner-via-grok') OR message LIKE '%Grok%' ORDER BY id DESC LIMIT 40")]
+        counts={
+            'review':db.execute("SELECT count(*) FROM items WHERE status='review'").fetchone()[0],
+            'queued':db.execute("SELECT count(*) FROM items WHERE status IN ('queued','generating','rendering')").fetchone()[0],
+            'published':db.execute('SELECT count(*) FROM published').fetchone()[0],
+            'week_status':(db.execute('SELECT status FROM weeks ORDER BY week DESC LIMIT 1').fetchone() or [None])[0],
+        }
+    return {'events':events,'stats':counts}
 
 @app.get('/editorial/api/contents')
 async def contents(request:Request,q:str=Query('',max_length=1000),filter:str='all',offset:int=Query(0,ge=0),limit:int=Query(30,ge=1,le=1000)):
@@ -294,35 +323,16 @@ async def revise_subject(id:str,slot:int,request:Request):
 @app.post('/editorial/api/weeks/{id}/approve')
 async def plan_action(id:str,request:Request):
     who=await actor(request);data=await body(request)
-    approve=request.url.path.endswith('/approve')
-    with store.db() as db:
-        row=db.execute('SELECT * FROM weeks WHERE id=?',(id,)).fetchone()
-        if not row:raise Conflict('Plan introuvable.')
-        week=dict(row)
-        if week['revision']!=data.get('revision') or week['status']!='plan_review':raise Conflict('Ce plan a changé ou est déjà en production.')
-        plan=json.loads(week['plan'])
-        if not approve:
-            updated=validate_plan(data.get('plan'),plan['products'],week['week'])
-            for subject in updated['subjects']+[updated['article']]:subject['scheduled_at']=date(subject['scheduled_at'])
-            plan.update(updated)
-            db.execute('UPDATE weeks SET plan=?,revision=revision+1 WHERE id=?',(dumps(plan),id));store.event(db,'Plan modifié, en attente de validation.',who)
-        else:
-            for brief in plan['subjects']+[plan['article']]:
-                if datetime.fromisoformat(date(brief['scheduled_at']))<=datetime.now(timezone.utc):raise Conflict('Le plan contient une date passée. Corrigez-la avant validation.')
-            for kind,slot,brief in [('social',s['slot'],s) for s in plan['subjects']]+[('blog',0,plan['article'])]:
-                item_id=uid();db.execute('INSERT INTO items(id,week_id,kind,slot,scheduled_at) VALUES(?,?,?,?,?)',(item_id,id,kind,slot,date(brief['scheduled_at'])));store.job(db,'draft',item_id)
-            db.execute("UPDATE weeks SET status='generating' WHERE id=?",(id,));store.event(db,'Plan approuvé : rédaction lancée. Les contenus finis devront être approuvés séparément.',who)
+    if request.url.path.endswith('/approve'):
+        store.approve_week(id,data.get('revision'),who)
+    else:
+        store.save_week(id,data.get('revision'),data.get('plan'),who)
     return {'ok':True}
 
 @app.post('/editorial/api/weeks/{id}/retry')
 async def retry_week(id:str,request:Request):
     who=await actor(request);data=await body(request)
-    with store.db() as db:
-        row=db.execute('SELECT * FROM weeks WHERE id=?',(id,)).fetchone()
-        if not row or row['status']!='failed' or row['revision']!=data.get('revision') or db.execute('SELECT 1 FROM items WHERE week_id=?',(id,)).fetchone():raise Conflict('Ce plan ne peut pas être repris.')
-        db.execute("UPDATE requests SET status='pending',week_id=NULL WHERE week_id=?",(id,))
-        db.execute("UPDATE weeks SET status='preparing',revision=revision+1,error=NULL WHERE id=?",(id,))
-        db.execute("DELETE FROM jobs WHERE kind='plan' AND target=?",(id,));store.job(db,'plan',id);store.event(db,'Préparation du plan relancée.',who)
+    store.retry_week(id,data.get('revision'),who)
     return {'ok':True}
 
 @app.post('/editorial/api/items/{id}/save')
@@ -363,15 +373,52 @@ async def item_action(id:str,request:Request):
                 db.execute("DELETE FROM jobs WHERE target=?",(id,));store.job(db,'demand' if db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(id,)).fetchone() else 'draft',id);store.event(db,'Nouvelle proposition demandée ; validation annulée.',who)
     return {'ok':True}
 
+@app.post('/editorial/api/items/{id}/ai-revise')
+async def item_ai_revise(id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    if type(data.get('revision')) is not int:raise Conflict('Indiquez la révision du contenu.')
+    result=agent_service.revise_from_owner(id,data['revision'],data.get('instruction',''),data.get('scope','both'),data.get('template'),who)
+    return {'ok':True,'result':result,'item':content_detail(store,id)}
+
+@app.post('/editorial/api/items/{id}/visual')
+async def item_visual(id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    if type(data.get('revision')) is not int:raise Conflict('Indiquez la révision du contenu.')
+    result=agent_service.visual_from_owner(id,data['revision'],data,who)
+    return {'ok':True,'result':result,'item':content_detail(store,id)}
+
+@app.post('/editorial/api/items/{id}/upload-image')
+async def item_upload_image(id:str,request:Request):
+    who=await actor(request)
+    raw=await binary_body(request,8*1024*1024)
+    from urllib.parse import unquote
+    try:revision=int(request.headers.get('x-item-revision',''))
+    except ValueError:raise Conflict('Indiquez la révision du contenu.')
+    purpose=request.headers.get('x-image-purpose','final')
+    filename=unquote(request.headers.get('x-file-name','image'))
+    result=await asyncio.to_thread(agent_service.upload_image_from_owner,id,revision,purpose,raw,filename,who)
+    return {'ok':True,'result':result,'item':content_detail(store,id)}
+
+@app.post('/editorial/api/items/{id}/delete')
+async def item_delete(id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    if type(data.get('revision')) is not int:raise Conflict('Indiquez la révision du contenu.')
+    store.delete_draft(id,data['revision'],who)
+    return {'ok':True}
+
 @app.post('/editorial/api/items/{id}/update-published')
 async def update_published_article(id: str, request: Request):
     who = await actor(request)
     data = await body(request)
-    if set(data) != {'revision', 'markdown'} or type(data['revision']) is not int:
-        raise Conflict('Indiquez la révision et le texte de l’article.')
-    markdown = data['markdown']
-    validate_content({'markdown': markdown}, 'blog')
-    store.update_published_article(id, data['revision'], markdown, who)
+    allowed_keys = {'revision', 'markdown', 'title', 'excerpt', 'seo_title', 'seo_description', 'category', 'tags'}
+    if not set(data) <= allowed_keys or type(data.get('revision')) is not int or not (set(data) - {'revision'}):
+        raise Conflict('Indiquez la révision et les champs de l’article à modifier.')
+    store.update_published_article(
+        id, data['revision'], data.get('markdown'), who,
+        title=data.get('title'), excerpt=data.get('excerpt'),
+        seo_title=data.get('seo_title'), seo_description=data.get('seo_description'),
+        category=data.get('category'), tags=data.get('tags'),
+    )
     return {'ok': True, 'item': content_detail(store, id)}
 
 @app.get('/editorial/media/{name}')
@@ -523,7 +570,9 @@ def connect_page():return FileResponse(ROOT/'static'/'connect.html')
 @app.get('/editorial/api/agent-connection')
 async def agent_connection(request:Request):
     await actor(request)
-    return {**agent_service.token_status(),'keys':agent_service.list_agent_keys(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':INSTRUCTIONS}
+    rules=store.get_rules()
+    instructions=INSTRUCTIONS+('\n\nConsignes personnalisées du propriétaire :\n'+rules['custom_instructions'] if rules.get('custom_instructions') else '')
+    return {**agent_service.token_status(),'keys':agent_service.list_agent_keys(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':instructions,'rules':rules}
 
 @app.post('/editorial/api/agent-connection')
 async def change_agent_connection(request:Request):

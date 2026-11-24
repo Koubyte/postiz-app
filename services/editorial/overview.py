@@ -1,4 +1,5 @@
 """Private, read-only content index for weekly and on-demand production."""
+import json
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -28,7 +29,7 @@ def rows(db):
     # payloads with every index refresh. The independent detail endpoint supplies
     # the selected content. rowid is an immutable, deterministic creation order.
     return db.execute('''
-        SELECT i.id,i.week_id,i.kind,i.slot,i.status,i.revision,i.scheduled_at,i.error,
+        SELECT i.id,i.week_id,i.kind,i.slot,i.status,i.revision,i.scheduled_at,i.error,i.blog_requested,
                w.week,d.conversation_id,a.parent_id,a.state AS companion_state,
                COALESCE(NULLIF(json_extract(i.content,'$.title'),''),
                         NULLIF(json_extract(d.brief,'$.title'),''),
@@ -43,6 +44,8 @@ def rows(db):
                                json_extract(i.content,'$.excerpt'),''),1,220) AS preview,
                json_extract(i.media,'$.media') AS media,
                json_extract(i.media,'$.blog_media') AS blog_media,
+               json_extract(i.content,'$.template') AS template,
+               COALESCE(json_array_length(json_extract(i.content,'$.carousel_slides')), 0) AS slide_count,
                COALESCE(json_extract(i.content,'$.facebook'),'') || ' ' ||
                COALESCE(json_extract(i.content,'$.instagram'),'') || ' ' ||
                COALESCE(json_extract(i.content,'$.markdown'),'') || ' ' ||
@@ -76,6 +79,9 @@ def summarize(row, current):
         overdue=overdue,
         warning='Choisissez un nouvel horaire avant de valider.' if overdue else None,
         error=row['error'], media_url=media_url(row['media']), blog_media_url=media_url(row['blog_media']),
+        template=row['template'], slide_count=int(row['slide_count'] or 0),
+        blog_requested=bool(row['blog_requested']),
+        has_visual=bool(row['media'] or row['blog_media']),
     )
     return result
 
@@ -119,16 +125,32 @@ def list_contents(store, *, q='', filter='all', offset=0, limit=30, current=None
 def content_detail(store, identifier):
     with store.db() as db:
         item = store.item(identifier, db)
-        row = db.execute('''SELECT d.conversation_id,w.week,a.parent_id
+        row = db.execute('''SELECT d.conversation_id,d.brief AS demand_brief,w.week,w.plan AS week_plan,a.parent_id
                               FROM items i
                               LEFT JOIN demand_items d ON d.item_id=i.id
                               LEFT JOIN weeks w ON w.id=i.week_id
                               LEFT JOIN companion_articles a ON a.article_id=i.id
                              WHERE i.id=?''', (identifier,)).fetchone()
+        brief = None
+        if row['demand_brief']:
+            try: brief = json.loads(row['demand_brief'])
+            except ValueError: brief = None
+        elif row['week_plan']:
+            try:
+                plan = json.loads(row['week_plan'])
+                if item['kind'] == 'blog':
+                    brief = plan.get('article')
+                else:
+                    brief = next((s for s in plan.get('subjects', []) if s.get('slot') == item['slot']), None)
+            except ValueError:
+                brief = None
         item.update(
             conversation_id=row['conversation_id'], week=row['week'],
             source='companion' if row['parent_id'] else 'on_demand' if row['conversation_id'] else 'weekly',
             schedule_authority='postiz' if item['status'] in {'scheduled', 'managed'} or (item['status'] == 'published' and item['kind'] == 'social') else 'studio',
+            brief=brief,
+            has_background=bool(item['media'].get('background_media')),
+            carousel_media_urls=[u for u in (media_url(n) for n in (item['media'].get('carousel_media') or [])) if u],
         )
         for key in MEDIA_FIELDS:
             item[key + '_url'] = media_url(item['media'].get(key))
