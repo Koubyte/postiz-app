@@ -15,7 +15,7 @@ from store import Conflict, Store, uid
 
 def draft(service, kind='social', query='ZEFIR 12A'):
     fields={'title':'Elokance ZEFIR 12A','headline':'Ta sono prête','alt':'Enceinte'}
-    if kind=='social':fields.update(facebook='Enceinte à 499 €',instagram='Enceinte à 499 €')
+    if kind=='social':fields.update(facebook='Enceinte à 499 €',instagram='Prête pour la fête ? Enceinte à 499 €')
     else:fields.update(markdown='Texte article',excerpt='Enceinte',slug='zefir-12a',category='produits')
     due=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
     return service.create_direct(uid(),kind,fields,product_query=query,scheduled_at=due)['item_id']

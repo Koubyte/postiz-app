@@ -21,7 +21,7 @@ def test_title_edit_preserves_agent_visual_and_revokes_approval(tmp_path, monkey
     monkeypatch.setenv('PUBLIC_URL', 'https://postiz.example.com')
     service = AgentService(Store(tmp_path), lambda: [])
     fields = {'title': 'Enceinte', 'headline': 'Ta sono', 'facebook': 'Texte',
-              'instagram': 'Texte', 'alt': 'Enceinte'}
+              'instagram': 'Ta sono prête pour samedi', 'alt': 'Enceinte'}
     date = (datetime.now(timezone.utc)+timedelta(days=2)).isoformat()
     draft = service.create_direct(uid(), 'social', fields, scheduled_at=date)
     imported = service.import_final_visual(uid(), draft['item_id'], 1, png('blue'))

@@ -16,7 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.responses import JSONResponse
 from conversation import checked_date, EDITABLE
-from generation import bounded_text
+from generation import bounded_text, SOCIAL_GUIDE, social_quality, quality_notes, opener_pattern
 from overview import list_contents, normalized
 from store import Conflict, dumps, now, uid, PARIS, digest, visual_edit_requires_render, EXTERNAL_VISUAL_WARNING, VISUAL_TEMPLATES
 from spacing import available_slot, reservations
@@ -26,7 +26,7 @@ INSTRUCTIONS = '''Vous êtes le community manager autonome de Planète Laser à 
 
 Voix & style éditorial :
 - Pour les textes destinés au public, y compris les publications Facebook et Instagram, leurs accroches et les articles de blog, tutoie le lecteur par défaut. Adopte une voix chaleureuse, passionnée de musique, avec une touche rock et un professionnalisme accessible : naturelle et précise, sans familiarité forcée, argot artificiel ni superlatifs creux. Respecte une autre voix uniquement si le propriétaire la demande explicitement pour le contenu concerné.
-- Différenciez toujours Facebook et Instagram : sur Instagram, 1re ligne stop-scroll (<= 12 mots), texte rythmé et enregistrable, 1 seul CTA clair, 3 à 5 hashtags ciblés ; sur Facebook, angle local plus détaillé (conseil, essai au magasin à Forbach, lien produit ou article publié).
+- Posts Facebook + Instagram : suivez le guide de rédaction ci-dessous. Le studio applique un contrôle qualité automatique : un brouillon dont Facebook et Instagram sont identiques, qui met une URL dans Instagram ou qui ressemble à une fiche technique est refusé avec les corrections à faire. Appelez `check_post_quality` avant `create_direct_draft` ou `edit_content`, et visez un score de 100.
 - Pour les articles de blog : réponse directe dès l’intro, H2/H3 clairs, tableau si utile, 700 à 1200 mots conseillés (minimum 500 mots), seo_title <= 60 car., seo_description 130–155 car., tags pertinents, et 2 à 4 liens internes naturels ([ancre](/blog/slug)) vers des articles déjà publiés quand le sujet s’y prête.
 
 Réflexes données & catalogue :
@@ -39,8 +39,9 @@ Gestion complète de la semaine :
 - Vous pouvez ajouter/supprimer des demandes produits prioritaires (`add_product_request`, `delete_product_request`), lancer `prepare_week`, modifier directement des créneaux ou l’article (`update_week_plan`), demander une révision IA d’un créneau (`revise_week_slot`), relancer un plan échoué (`retry_week_plan`), et valider le plan (`approve_week_plan`) pour lancer la production des brouillons.
 
 Mode hybride rédaction + visuels & carrousels :
-- Mode rapide maîtrisé : rédigez directement vos textes et articles avec `create_direct_draft(..., generate_visual=True, template='minimal', visual_instructions=..., carousel_slides=...)`, puis utilisez `bind_catalogue_product` si besoin de verrouiller prix/stock.
-- Mode assisté : utilisez `prepare_content` pour faire rédiger et illustrer par le studio, puis améliorez librement via `edit_content`, `revise_content(scope='text'|'visual'|'both')`, ou `generate_visual`.
+- Mode assisté (recommandé pour les posts produit) : `prepare_content` avec un brief de FAITS vérifiés + l’angle choisi + le public visé. N’y dictez pas de « texte souhaité » : le rédacteur du studio écrit selon le guide, puis vous améliorez via `edit_content`, `revise_content(scope='text'|'visual'|'both')` ou `generate_visual`.
+- Mode direct : `create_direct_draft(..., generate_visual=True, template=..., visual_instructions=..., carousel_slides=...)` quand le propriétaire vous dicte un texte précis ou que vous avez écrit deux légendes conformes au guide ; `bind_catalogue_product` verrouille ensuite prix et stock.
+- Visuels : préférez `generate_visual` (décors variés par le studio). Si vous importez votre propre visuel, changez de décor d’un post à l’autre : jamais le même canapé, mur ou tapis sur des posts consécutifs.
 - Contrôle visuel fin : `generate_visual` permet de générer ou refaire UNIQUEMENT l’image sans toucher aux textes, de choisir le gabarit (`classic`, `minimal`, `raw`, `tip_card`), ou de basculer en mode carrousel (2 à 5 slides via `carousel_slides`). Passez `recomposite_only=True` pour changer de gabarit, accroche ou slides instantanément (< 1 s) sans regénérer la scène photo. Variez les gabarits et les décors entre les posts.
 - Vous pouvez aussi rejeter (`reject_content`), relancer (`retry_content`), supprimer un brouillon raté (`delete_draft`) ou mettre à jour un article déjà en ligne (`update_published_article`) pour corriger ou enrichir son maillage interne et son SEO.
 - Si vous fournissez vos propres octets d’image (`attach_reference_image`, `import_final_visual`, `create_media_upload`), ne prétendez les avoir envoyés que si l’outil a réussi.
@@ -48,7 +49,9 @@ Mode hybride rédaction + visuels & carrousels :
 Validation & garde-fou social (obligatoire) :
 - Pour tout post social prêt à programmer (`approve_content`) ou toute programmation/modification active Postiz (`apply_postiz_change`), consultez d’abord `get_content` ET `get_visual`, montrez au propriétaire les deux textes, le visuel réel, la date effective en heure de Paris et l’option `create_blog`, puis attendez son accord explicite APRÈS cet aperçu. Copiez ses mots exacts dans `owner_confirmation`. N’inventez jamais son accord.
 - Avec `create_blog=true`, la validation du post lance aussi l’article compagnon (suivi via `companion_article` dans `get_content`).
-- Vous disposez aussi de `read_postiz`, `preview_postiz_change`, `apply_postiz_change` (calendrier natif Postiz, brouillons, stats) et des outils stratégie (`get_marketing_strategy`, `refresh_watch`, `refresh_performance_report`, `prepare_watch_idea`, `create_campaign`, `prepare_campaign`, `retry_campaign`).'''
+- Vous disposez aussi de `read_postiz`, `preview_postiz_change`, `apply_postiz_change` (calendrier natif Postiz, brouillons, stats) et des outils stratégie (`get_marketing_strategy`, `refresh_watch`, `refresh_performance_report`, `prepare_watch_idea`, `create_campaign`, `prepare_campaign`, `retry_campaign`).
+
+'''+SOCIAL_GUIDE
 
 class AgentService:
     def __init__(self,store,calendar,publisher=None):
@@ -178,6 +181,7 @@ class AgentService:
             raise Conflict('La photo du propriétaire exige une référence fournie explicitement.')
         checked=validate_content(fields,kind)
         checked.pop('uncertainty',None)
+        quality=self.quality_gate(checked) if kind=='social' else None
         if template and 'template' not in checked:checked['template']=template
         if visual and 'visual_instructions' not in checked:checked['visual_instructions']=visual
         payload={'operation':'create_direct_draft','kind':kind,'fields':fields,'product_query':query,'scheduled_at':scheduled_at,'create_blog':create_blog}
@@ -220,6 +224,7 @@ class AgentService:
             result={'item_id':item_id,'revision':1,'status':status,'scheduled_at':due,'requested_at':requested,
                     'blog_requested':create_blog,'review_url':self.link(item_id,cid),'has_visual':False,
                     'catalogue_revalidation':'unavailable_until_product_snapshot' if query else 'not_applicable','requires_owner_approval':True}
+            if quality:result['quality']=quality
             self.remember(db,request_id,fingerprint,result)
             self.store.event(db,'Brouillon rédigé directement par l’agent'+(' ; visuel en préparation.' if generate_visual else ' ; visuel et validation requis.'),'grok-agent')
         return result
@@ -346,6 +351,30 @@ class AgentService:
         return fingerprint,None
     def remember(self,db,request_id,fingerprint,result):
         db.execute('INSERT INTO agent_requests VALUES(?,?,?,?)',(request_id,fingerprint,dumps(result),now()))
+    def recent_openers(self,exclude=None,db=None):
+        """Opening formulas of the latest social posts, to stop every post starting the same way."""
+        if db is None:
+            with self.store.db() as conn:return self.recent_openers(exclude,conn)
+        rows=db.execute("SELECT id,content FROM items WHERE kind='social' AND status!='rejected' AND content!='{}' ORDER BY scheduled_at DESC LIMIT 15").fetchall()
+        openers=[]
+        for row in rows:
+            if row['id']==exclude:continue
+            content=json.loads(row['content'])
+            if content.get('instagram'):openers.append(opener_pattern(content['instagram'],content.get('title','')))
+        return openers
+    def quality_gate(self,checked,exclude=None,db=None,enforce=True):
+        """Refuse captions with blocking issues; keep the rest visible to the owner at review."""
+        quality=social_quality(checked,self.recent_openers(exclude,db))
+        if enforce and quality['blocking']:
+            raise Conflict('Brouillon refusé par le contrôle qualité. À corriger : '+' '.join(f'{n}) {issue}' for n,issue in enumerate(quality['blocking'],1))+' Réécris les deux légendes selon le guide (check_post_quality pour vérifier), puis renvoie.')
+        notes=[n for n in checked.get('editorial_notes',[]) if not n.startswith('Qualité : ')]
+        checked['editorial_notes']=notes+quality_notes(quality)
+        return quality
+    def check_quality(self,fields):
+        if not isinstance(fields,dict):raise Conflict('Indiquez les champs facebook, instagram et title.')
+        content={k:fields.get(k) if isinstance(fields.get(k),str) else '' for k in ('title','facebook','instagram')}
+        quality=social_quality(content,self.recent_openers())
+        return {**quality,'accepted':not quality['blocking'],'guide':SOCIAL_GUIDE}
     def link(self,item_id,conversation_id=None):
         base=os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/'
         return base+'?'+('conversation='+conversation_id+'&' if conversation_id else '')+'item='+item_id+('#discussion' if conversation_id else '#semaine')
@@ -370,7 +399,7 @@ class AgentService:
         else:
             catalogue='stock_only'
             catalogue_warning='Le prix affiché ne sera pas revérifié automatiquement auprès du catalogue.'
-        return {'postiz_posts':postiz_posts,'calendar_url':os.environ['PUBLIC_URL'].rstrip('/')+'/launches',**{k:item[k] for k in ('id','kind','revision','status','scheduled_at','content','error','blog_requested','companion_article','derived_from_post')},'review_token':self.review_token(item),'brief':brief,'review_url':self.link(item_id,demand['conversation_id'] if demand else None),'has_visual':bool(item['media'].get('media')),'template':item['content'].get('template'),'carousel_slides':item['content'].get('carousel_slides') or [],'carousel_slide_count':len(item['media'].get('carousel_media') or []),'has_background':bool(item['media'].get('background_media')),'requires_owner_approval':self.requires_approval(item),'catalogue_revalidation':catalogue,'catalogue_warning':catalogue_warning}
+        return {'postiz_posts':postiz_posts,'calendar_url':os.environ['PUBLIC_URL'].rstrip('/')+'/launches',**{k:item[k] for k in ('id','kind','revision','status','scheduled_at','content','error','blog_requested','companion_article','derived_from_post')},'review_token':self.review_token(item),'brief':brief,'review_url':self.link(item_id,demand['conversation_id'] if demand else None),'has_visual':bool(item['media'].get('media')),'template':item['content'].get('template'),'carousel_slides':item['content'].get('carousel_slides') or [],'carousel_slide_count':len(item['media'].get('carousel_media') or []),'has_background':bool(item['media'].get('background_media')),'requires_owner_approval':self.requires_approval(item),'catalogue_revalidation':catalogue,'catalogue_warning':catalogue_warning,'quality':social_quality(item['content'],self.recent_openers(item_id)) if item['kind']=='social' and item['content'].get('instagram') else None}
     def requires_approval(self,item):
         if item['status'] in ('approved','publishing','submitted','scheduled','published','managed'):return False
         if item.get('derived_from_post'):
@@ -407,6 +436,7 @@ class AgentService:
             'weeks':weeks,'items':summary['items'],'contents_counts':summary['counts'],
             'pending_requests':pending_requests,'public_articles':public_articles,
             'editorial_rules':rules,'visual_templates':list(VISUAL_TEMPLATES),
+            'writing_guide':SOCIAL_GUIDE,'recent_openers':self.recent_openers(),
             'review_home':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/',
             'weekly_scheduler':'Vendredi 09:00 Europe/Paris : plan de la semaine suivante, modifiable et validable via approve_week_plan.'
         }
@@ -443,7 +473,7 @@ class AgentService:
             if schedule_deadline and datetime.fromisoformat(due)>datetime.fromisoformat(schedule_deadline):
                 raise Conflict('Le calendrier s’est rempli : aucun créneau dans la période de la campagne. Les brouillons existants sont conservés ; choisissez une période plus large.')
             cid=uid();item_id=uid();message_id=uid()
-            data={'title':text[:150],'kind':'product' if query else 'advice','query':query,'angle':text,'scene':'Mise en situation musicale soignée, charte Planète Laser. '+text,'scheduled_at':due,'requested_at':requested,'price':price,'photo_ids':[],'instruction':text,'suggested_reference':reference}
+            data={'title':text[:150],'kind':'product' if query else 'advice','query':query,'angle':text,'scene':'Mise en situation musicale soignée, charte Planète Laser. '+text,'scheduled_at':due,'requested_at':requested,'price':price,'photo_ids':[],'instruction':text,'suggested_reference':reference,'source':'agent'}
             if visual:data['visual_instructions']=visual
             if price_mode is not None:data['price_mode']=price_mode
             if reference_owner_supplied:data['reference_owner_supplied']=True
@@ -584,6 +614,10 @@ class AgentService:
             if db.execute("SELECT 1 FROM deliveries WHERE item_id=? AND status!='failed'",(item_id,)).fetchone():raise Conflict('Utilisez les postiz_posts de get_content pour modifier ce post dans le calendrier.')
             due=checked_date(scheduled_at) if scheduled_at else item['scheduled_at']
             checked=validate_content({**item['content'],**fields},item['kind'])
+            quality=None
+            if item['kind']=='social':
+                # Only rewritten captions are refused; a date or title change keeps legacy drafts editable.
+                quality=self.quality_gate(checked,exclude=item_id,db=db,enforce=bool({'facebook','instagram'}&set(fields)))
             updated={**item['content'],**checked};updated.pop('uncertainty',None)
             if 'visual_instructions' in fields and isinstance(fields['visual_instructions'],str):
                 updated['visual_instructions']=bounded_text(fields['visual_instructions'],6000)
@@ -597,6 +631,7 @@ class AgentService:
                 db.execute('DELETE FROM jobs WHERE target=?',(item_id,));self.store.job(db,job_kind,item_id)
             result={'item_id':item_id,'revision':revision+1,'status':'rendering' if render else 'review','requires_owner_approval':True,'review_url':self.link(item_id)}
             if EXTERNAL_VISUAL_WARNING in updated.get('editorial_notes',[]):result['visual_warning']=EXTERNAL_VISUAL_WARNING
+            if quality:result['quality']=quality
             self.remember(db,request_id,fingerprint,result)
             self.store.event(db,'Texte enregistré directement par Grok Bot, sans réécriture Codex.','grok-agent')
         return result
@@ -989,8 +1024,12 @@ def build_mcp(service):
         return service.create_media_upload(item_id,revision,purpose)
     @mcp.tool(annotations=write)
     def create_direct_draft(request_id:str,kind:Literal['social','blog'],fields:dict,product_query:str='',scheduled_at:str|None=None,create_blog:bool=False,generate_visual:bool=False,visual_instructions:str|None=None,template:Literal['classic','minimal','raw','tip_card']|None=None,price_mode:Literal['hide','catalogue']|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,reference_owner_supplied:bool=False)->dict:
-        """Create ONE studio draft directly from your finished text, without Codex rewriting. fields may include title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources, seo_title, seo_description, tags, template, carousel_slides. Pass generate_visual=true (with optional visual_instructions, template, price_mode, reference_image_url) to also generate the visual right away, or attach/import one afterward. Reuse request_id for a retry."""
+        """Create ONE studio draft directly from your finished text, without Codex rewriting. Social captions go through the quality gate: identical Facebook/Instagram texts, URLs in Instagram or spec-sheet captions are refused with the fixes to make (call check_post_quality first). fields may include title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources, seo_title, seo_description, tags, template, carousel_slides. Pass generate_visual=true (with optional visual_instructions, template, price_mode, reference_image_url) to also generate the visual right away, or attach/import one afterward. Reuse request_id for a retry."""
         return service.create_direct(request_id,kind,fields,product_query,scheduled_at,create_blog,generate_visual,visual_instructions,template,price_mode,price,reference_image_url,reference_source_url,reference_owner_supplied)
+    @mcp.tool(annotations=read)
+    def check_post_quality(fields:dict)->dict:
+        """Check Facebook + Instagram captions before create_direct_draft or edit_content. fields: title, facebook, instagram. Returns score (aim for 100), blocking issues (the draft would be refused), warnings (shown to the owner at review) and the writing guide. Never creates or changes anything."""
+        return service.check_quality(fields)
     @mcp.tool(annotations=write)
     def bind_catalogue_product(request_id:str,item_id:str,revision:int,query:str,price_mode:Literal['hide','catalogue']='catalogue')->dict:
         """Bind an exact, uniquely matched store product to an existing individual draft without generating or rewriting content. Returns the current price and availability; compare those to your text and image. With catalogue price mode, price and availability are rechecked before publication. Invalidates previous approval and increments revision. Reuse request_id on retry."""
@@ -1088,7 +1127,7 @@ def build_mcp(service):
         return service.update_published_article(request_id,item_id_or_slug,revision,markdown,title,excerpt,seo_title,seo_description,category,tags)
     @mcp.tool(annotations=write)
     def edit_content(request_id:str,item_id:str,revision:int,fields:dict,scheduled_at:str|None=None)->dict:
-        """Save Grok's exact text into ONE studio draft or not-yet-delivered approved item without Codex rewriting it. fields: title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources, seo_title, seo_description, tags, template, carousel_slides, visual_instructions. Text-only edits retain visuals. Changing a title, template or carousel_slides regenerates a studio-made visual; a finished visual supplied by the agent stays intact and a warning asks for a consistency check. Invalidates prior approval. For delivered items use postiz_posts from get_content and native Postiz tools."""
+        """Save Grok's exact text into ONE studio draft (rewritten facebook/instagram captions pass the same quality gate as create_direct_draft) or not-yet-delivered approved item without Codex rewriting it. fields: title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources, seo_title, seo_description, tags, template, carousel_slides, visual_instructions. Text-only edits retain visuals. Changing a title, template or carousel_slides regenerates a studio-made visual; a finished visual supplied by the agent stays intact and a warning asks for a consistency check. Invalidates prior approval. For delivered items use postiz_posts from get_content and native Postiz tools."""
         return service.edit(request_id,item_id,revision,fields,scheduled_at)
     def native():
         if service.postiz is None:raise Conflict('Connexion Postiz indisponible.')
