@@ -148,7 +148,8 @@ def plan_staging(store,item,brief,product,history):
         eligible=[s for s in scenes if s['id']==forced_scene]
         if not eligible:raise Conflict('Le lieu du magasin choisi est introuvable ou en pause.')
     else:
-        subject=_fold(' '.join(str(x) for x in ((product or {}).get('title'),(product or {}).get('category'),content.get('title'),brief.get('title'),brief.get('angle'))))
+        # The catalogue URL carries the category (…/guitares-basses/…, …/pianos-claviers/…), titles often do not.
+        subject=_fold(' '.join(str(x) for x in ((product or {}).get('title'),(product or {}).get('category'),(product or {}).get('url'),content.get('title'),brief.get('title'),brief.get('angle')) if x))
         # A place suits the product when one of its uses appears in the subject; untagged or 'tous' places suit everything.
         eligible=[s for s in scenes if not s['tags'] or 'tous' in s['tags'] or any(_fold(t).rstrip('sx') in subject for t in s['tags'] if len(_fold(t).rstrip('sx'))>=2)]
     allowed=['store','in_use','lifestyle','detail'] if product else ['store','in_use','lifestyle']

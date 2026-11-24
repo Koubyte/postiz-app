@@ -139,3 +139,14 @@ def test_grok_can_add_list_and_pause_shop_photos(store, monkeypatch):
     assert not service.update_store_scene(uid(), added['id'], active=False)['active']
     with pytest.raises(Conflict):
         service.add_store_photo(uid(), 'Rien', image_base64=None, image_url=None)
+
+
+def test_catalogue_category_matches_tagged_places(store):
+    armchair = add_scene(store, photo('sienna'), 'Fauteuil cuir', '', ['guitares', 'basses'])
+    stage = add_scene(store, photo('navy'), 'Vitrine scène', '', ['claviers', 'pianos'])
+    guitar = {'title': 'Fender Player II Stratocaster RW Birch Green',
+              'url': 'https://planetelaser.fr/instruments/guitares-basses/fender-player-ii-strat-rw-birch-green'}
+    piano = {'title': 'Casio PX-S1100 Blanc', 'url': 'https://planetelaser.fr/instruments/pianos-claviers/casio-px-s1100-blanc'}
+    item = {'id': 'x', 'content': {}}
+    assert plan_staging(store, item, {}, guitar, [])['store_scene']['id'] == armchair['id']
+    assert plan_staging(store, item, {}, piano, [])['store_scene']['id'] == stage['id']
