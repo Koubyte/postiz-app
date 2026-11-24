@@ -1145,3 +1145,10 @@ textarea.blog-editor.with-toolbar {
     padding: 14px;
   }
 }
+
+/* The settings menu leads to rules, shop photos and the Grok connection. */
+.studio-menu .studio-menu-rules {
+  display: flex;
+  width: 100%;
+  margin: 4px 0 8px;
+}
