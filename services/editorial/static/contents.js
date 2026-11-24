@@ -1,5 +1,5 @@
 'use strict';
-// A read-only index. Opening a row uses the existing exact-version review flow.
+// Open the matching editor or review dialog from the contents index.
 const contents = {filter:'all',items:[],total:0,nextOffset:0,sequence:0,loaded:false,busy:false,signature:''};
 const contentFilters = [
   ['all','Tout'],['review','À valider'],['attention','À reprendre'],
@@ -34,7 +34,11 @@ function contentRow(item) {
   body.append(el('div',{class:'content-row-status'},badge(item.status),item.overdue?el('span',{class:'badge blocked'},'Date à revoir'):null));
   if(item.warning || item.error)body.append(el('p',{class:'content-issue'},item.error||item.warning));
   const actions=el('div',{class:'content-row-actions'});
-  const review=el('button',{class:'button '+(item.status==='review'?'primary':'secondary'),type:'button'},item.status==='review'?'Relire et valider':['failed','blocked','rejected'].includes(item.status)?'Examiner et reprendre':'Voir le contenu');
+  let actionLabel='Voir le contenu';
+  if(item.kind==='blog' && item.status==='published')actionLabel='Modifier l’article';
+  if(item.status==='review')actionLabel='Relire et valider';
+  if(['failed','blocked','rejected'].includes(item.status))actionLabel='Examiner et reprendre';
+  const review=el('button',{class:'button '+(item.status==='review'?'primary':'secondary'),type:'button'},actionLabel);
   review.onclick=()=>openContent(item.id,review);
   actions.append(review);
   if(['scheduled','managed'].includes(item.status))actions.append(el('a',{href:'/launches',class:'content-secondary-link'},'Calendrier Postiz'));

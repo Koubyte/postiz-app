@@ -170,6 +170,40 @@ class Store:
                 from companion import authorize
                 authorize(self,db,self.item(id,db),actor,create_blog)
             self.snapshot(db,self.item(id,db));self.event(db,'Version approuvée pour publication à la date affichée.',actor)
+
+    def update_published_article(self, identifier, revision, markdown, actor):
+        with self.db() as db:
+            item = self.item(identifier, db)
+            self.check_revision(item, revision)
+            if item['kind'] != 'blog' or item['status'] != 'published':
+                raise Conflict('Seuls les articles déjà publiés peuvent être mis à jour sur le site.')
+
+            row = db.execute('SELECT body FROM published WHERE item_id=?', (identifier,)).fetchone()
+            if row is None:
+                raise Conflict('La version publique de cet article est introuvable.')
+            public = json.loads(row['body'])
+            if markdown == item['content']['markdown'] == public['content']:
+                return
+
+            self.snapshot(db, item)
+            updated_at = now()
+            updated = {
+                **item,
+                'content': {**item['content'], 'markdown': markdown},
+                'revision': revision + 1,
+                'approved_by': actor,
+                'approved_at': updated_at,
+            }
+            updated['approval_hash'] = self.content_hash(updated)
+            db.execute('''UPDATE items SET content=?,revision=?,approval_hash=?,approved_by=?,approved_at=?
+                          WHERE id=?''',
+                       (dumps(updated['content']), updated['revision'], updated['approval_hash'],
+                        actor, updated_at, identifier))
+            public.update(content=markdown, updatedAt=updated_at)
+            db.execute('UPDATE published SET body=? WHERE item_id=?', (dumps(public), identifier))
+            self.snapshot(db, updated)
+            self.event(db, 'Article mis à jour sur le site : ' + public['slug'], actor)
+
     def recover(self):
         with self.db() as db:
             db.execute("UPDATE jobs SET status=CASE WHEN attempts<2 THEN 'queued' ELSE 'failed' END,updated=? WHERE status='running'",(now(),))

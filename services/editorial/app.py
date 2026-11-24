@@ -363,6 +363,17 @@ async def item_action(id:str,request:Request):
                 db.execute("DELETE FROM jobs WHERE target=?",(id,));store.job(db,'demand' if db.execute('SELECT 1 FROM demand_items WHERE item_id=?',(id,)).fetchone() else 'draft',id);store.event(db,'Nouvelle proposition demandée ; validation annulée.',who)
     return {'ok':True}
 
+@app.post('/editorial/api/items/{id}/update-published')
+async def update_published_article(id: str, request: Request):
+    who = await actor(request)
+    data = await body(request)
+    if set(data) != {'revision', 'markdown'} or type(data['revision']) is not int:
+        raise Conflict('Indiquez la révision et le texte de l’article.')
+    markdown = data['markdown']
+    validate_content({'markdown': markdown}, 'blog')
+    store.update_published_article(id, data['revision'], markdown, who)
+    return {'ok': True, 'item': content_detail(store, id)}
+
 @app.get('/editorial/media/{name}')
 async def media(name:str,request:Request):
     await actor(request)

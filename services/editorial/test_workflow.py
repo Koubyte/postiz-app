@@ -172,6 +172,81 @@ def test_public_http_endpoints_do_not_expose_drafts(store,monkeypatch):
         assert client.get('/editorial/api/state').status_code==401
 
 
+def test_owner_can_update_published_article_without_republishing(store, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    origin = 'https://postiz.example.com'
+    monkeypatch.setenv('PUBLIC_URL', origin)
+    monkeypatch.setenv('POSTIZ_INTERNAL_URL', 'http://postiz.internal')
+    monkeypatch.setenv('POSTIZ_ORG_ID', 'shop')
+    monkeypatch.setenv('EDITORIAL_OWNER_EMAIL', 'owner@example.com')
+    monkeypatch.setenv('EDITORIAL_DATA', str(store.root))
+    monkeypatch.setenv('EDITORIAL_WORKER', 'false')
+    spec = importlib.util.spec_from_file_location('editorial_update_app', Path(__file__).with_name('app.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def postiz_user(url, *, headers, **kwargs):
+        assert url == 'http://postiz.internal/api/user/self'
+        email = 'owner@example.com' if headers['Cookie'] == 'session=owner' else 'visitor@example.com'
+        return SimpleNamespace(status_code=200, json=lambda: {'id': 'owner', 'orgId': 'shop', 'email': email})
+
+    monkeypatch.setattr(requests, 'get', postiz_user)
+    social = create_item(store, 'social', 'published')
+    article = create_item(store, 'blog')
+    publisher = Publisher(store, SimpleNamespace(products=lambda **kw: []))
+    social_calls = fake_api(monkeypatch, publisher)
+    route = f'/editorial/api/items/{article}/update-published'
+    markdown = '## Pour débuter\n\nCompare les [contrôleurs DJ](/blog/choisir-controleur-dj-debutant).'
+    headers = {'Cookie': 'session=owner', 'Origin': origin, 'x-editorial-action': '1'}
+    update = {'revision': 1, 'markdown': markdown}
+
+    with TestClient(module.app) as client:
+        assert client.post(route, json=update).status_code == 401
+        assert client.post(route, headers={**headers, 'Cookie': 'session=visitor'}, json=update).status_code == 403
+        assert client.post(route, headers={**headers, 'Origin': 'https://other.example.com'}, json=update).status_code == 403
+        assert client.post(route, headers=headers, json=update).status_code == 409
+        assert client.post(f'/editorial/api/items/{social}/update-published', headers=headers, json=update).status_code == 409
+
+        store.approve_item(article, 1, 'first-owner', True)
+        make_due(monkeypatch, store.item(article))
+        publisher.deliver(article)
+        original = client.get('/editorial/public/articles').json()['articles'][0]
+        before = store.item(article)
+
+        for invalid in ({**update, 'markdown': '  '}, {**update, 'markdown': '[Texte](javascript:alert)'},
+                        {**update, 'revision': True}, {**update, 'slug': 'nouvelle-url'}):
+            assert client.post(route, headers=headers, json=invalid).status_code == 409
+
+        response = client.post(route, headers=headers, json=update)
+        assert response.status_code == 200
+        item = response.json()['item']
+        assert item['status'] == 'published' and item['revision'] == 2
+        assert item['content'] == {**before['content'], 'markdown': markdown}
+        assert item['blog_media_url'] == '/editorial/media/cover.png'
+        assert 'approval_hash' not in item
+        assert item['approved_by'] == 'owner' and item['scheduled_at'] == before['scheduled_at']
+        assert item['deliveries'] == []
+        assert client.post(route, headers=headers, json={**update, 'markdown': 'Texte d’un onglet périmé.'}).status_code == 409
+        assert client.post(route, headers=headers, json={**update, 'revision': 2}).json()['item']['revision'] == 2
+
+        public = client.get('/editorial/public/articles').json()['articles']
+        assert public == [{**original, 'content': markdown, 'updatedAt': item['approved_at']}]
+        assert public[0]['updatedAt'] > original['updatedAt']
+
+    publisher.deliver(article)
+    assert social_calls == []
+    current = store.item(article)
+    assert current['approval_hash'] == store.content_hash(current)
+    with store.db() as db:
+        snapshots = [json.loads(row['body']) for row in db.execute(
+            'SELECT body FROM revisions WHERE item_id=? ORDER BY revision', (article,),
+        )]
+        assert [snapshot['content']['markdown'] for snapshot in snapshots] == [original['content'], markdown]
+        assert [snapshot['approved_by'] for snapshot in snapshots] == ['first-owner', 'owner']
+        assert db.execute('SELECT count(*) FROM jobs WHERE target=?', (article,)).fetchone()[0] == 0
+
+
 def valid_plan():
     products=[{'id':'p'+str(i)} for i in range(3)]
     plan={'subjects':[{'slot':i,'kind':'product' if i<3 else 'advice','title':'Sujet '+str(i),'angle':'Conseil pratique','product_id':'p'+str(i) if i<3 else None,'scene':'Un studio'} for i in range(7)],'article':{'title':'Un guide','angle':'Un plan utile','product_id':None,'social_slot':6}}

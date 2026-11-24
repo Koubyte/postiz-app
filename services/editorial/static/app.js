@@ -1,5 +1,6 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
+const storefrontOrigin = 'https://planetelaser.fr';
 const state = {
   data: null,
   weekId: null,
@@ -76,10 +77,10 @@ function el(tag, attrs = {}, ...children) {
     );
   return n;
 }
-function safeUrl(value) {
+function safeUrl(value, base = location.origin) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
-    const u = new URL(value, location.origin);
+    const u = new URL(value, base);
     return ['http:', 'https:'].includes(u.protocol) ? u.href : null;
   } catch {
     return null;
@@ -904,12 +905,12 @@ function renderEvents() {
   );
 }
 function appendInline(parent, text) {
-  const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|`([^`]+)`/g;
+  const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/(?![/\\])[^\s)\\]*)\)|\*\*([^*]+)\*\*|`([^`]+)`/g;
   let last = 0;
   for (const match of text.matchAll(re)) {
     parent.append(document.createTextNode(text.slice(last, match.index)));
     if (match[1]) {
-      const url = safeUrl(match[2]);
+      const url = safeUrl(match[2], storefrontOrigin);
       parent.append(
         url
           ? el(
@@ -981,9 +982,10 @@ function openItem(item) {
   const root = $('review-content');
   root.replaceChildren();
   const published = item.status === 'published';
+  const publishedBlog = published && item.kind === 'blog';
   const inCalendar = ['scheduled', 'managed'].includes(item.status);
-  const blogUrl = published && item.kind === 'blog' && content.slug
-    ? `https://planetelaser.fr/blog/${encodeURIComponent(content.slug)}`
+  const blogUrl = publishedBlog && content.slug
+    ? `${storefrontOrigin}/blog/${encodeURIComponent(content.slug)}`
     : null;
   const immutable = ![
     'review',
@@ -1097,6 +1099,8 @@ function openItem(item) {
     ),
   );
   const inputs = {};
+  let savedMarkdown;
+  let updateMarkdownPreview;
   function add(key, label, tag = 'input', attrs = {}) {
     const f = field(label, tag, content[key] || '', {
       disabled: immutable,
@@ -1107,33 +1111,38 @@ function openItem(item) {
     fields.append(f.label);
     return f;
   }
-  add('title', 'Titre du contenu');
+  if (!publishedBlog) add('title', 'Titre du contenu');
   if (item.kind !== 'blog')
     add('headline', 'Accroche du visuel', 'input', { maxlength: 90 });
   if (item.kind === 'blog') {
-    add('slug', 'Adresse de l’article (slug)');
-    const category = add('category', 'Rubrique', 'select');
-    category.input.append(
-      ...[
-        ['guides', 'Conseils et guides'],
-        ['actualites', 'Actualités'],
-        ['produits', 'Produits'],
-      ].map(([value, label]) => el('option', { value }, label)),
-    );
-    category.input.value = content.category || 'guides';
-    add('excerpt', 'Introduction courte', 'textarea', { rows: 3 });
+    if (!publishedBlog) {
+      add('slug', 'Adresse de l’article (slug)');
+      const category = add('category', 'Rubrique', 'select');
+      category.input.append(
+        ...[
+          ['guides', 'Conseils et guides'],
+          ['actualites', 'Actualités'],
+          ['produits', 'Produits'],
+        ].map(([value, label]) => el('option', { value }, label)),
+      );
+      category.input.value = content.category || 'guides';
+      add('excerpt', 'Introduction courte', 'textarea', { rows: 3 });
+    }
     const md = add('markdown', 'Article · Markdown', 'textarea', {
       class: 'blog-editor',
       rows: 18,
+      disabled: immutable && !publishedBlog,
     });
+    savedMarkdown = md.input.value;
     const preview = el('details', {}, el('summary', {}, 'Aperçu de l’article'));
     let previewBox = renderMarkdown(content.markdown);
     preview.append(previewBox);
-    md.input.addEventListener('input', () => {
+    updateMarkdownPreview = () => {
       const next = renderMarkdown(md.input.value);
       previewBox.replaceWith(next);
       previewBox = next;
-    });
+    };
+    md.input.addEventListener('input', updateMarkdownPreview);
     fields.append(preview);
   } else {
     add('facebook', 'Texte Facebook', 'textarea', { rows: 7, maxlength: 5000 });
@@ -1142,7 +1151,7 @@ function openItem(item) {
       maxlength: 2200,
     });
   }
-  add('alt', 'Description accessible du visuel', 'textarea', { rows: 2 });
+  if (!publishedBlog) add('alt', 'Description accessible du visuel', 'textarea', { rows: 2 });
   const when = field(
     'Publication · heure de Paris',
     'input',
@@ -1165,7 +1174,7 @@ function openItem(item) {
   }
   when.input.addEventListener('input', updateTimingWarning);
   updateTimingWarning();
-  if (item.status !== 'managed') fields.append(when.label);
+  if (item.status !== 'managed' && !publishedBlog) fields.append(when.label);
   const sources = el(
     'section',
     { class: 'sources' },
@@ -1229,7 +1238,7 @@ function openItem(item) {
       el('label', { class: 'review-check' }, createBlog, 'Créer aussi un article de blog'),
       el('p', { class: 'hint' }, 'En validant ce post avec cette case cochée, j’autorise la rédaction et la publication de l’article associé sur planetelaser.fr, sans deuxième validation. L’article sera publié dès qu’il sera rédigé et illustré, même si le post est programmé plus tard.')));
   }
-  if (item.derived_from_post) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
+  if (item.derived_from_post && !publishedBlog) fields.append(el('p', { class: 'notice' }, 'Article associé à un post. Sa publication automatique dépend de la validation de cette version du post ; une modification demande une nouvelle validation.'));
   const save = el(
     'button',
     { class: 'button secondary review-save', type: 'button', disabled: true },
@@ -1263,7 +1272,24 @@ function openItem(item) {
     role: 'alert',
     hidden: true,
   });
+  const updatePublished = el(
+    'button',
+    { class: 'button primary', type: 'button', disabled: true },
+    'Mettre à jour sur le site',
+  );
+  const publishedHint = 'Modifiez le texte et ses liens. La correction sera visible sur la même page.';
+  const publishedStatus = el('p', { class: 'hint', role: 'status' }, publishedHint);
+  function syncPublishedEditor() {
+    const markdown = inputs.markdown.value;
+    state.dirty = markdown !== savedMarkdown;
+    updatePublished.disabled = state.pending || !state.dirty || !markdown.trim();
+  }
   function markDirty() {
+    if (publishedBlog) {
+      publishedStatus.textContent = publishedHint;
+      syncPublishedEditor();
+      return;
+    }
     state.dirty = true;
     approve.disabled = true;
     save.disabled = false;
@@ -1272,6 +1298,29 @@ function openItem(item) {
   }
   // The approval click is the owner's confirmation; image loading is not a gate.
   approve.disabled = state.dirty || item.status !== 'review';
+  updatePublished.onclick = async () => {
+    if (state.pending || updatePublished.disabled) return;
+    const editor = inputs.markdown;
+    error.hidden = true;
+    editor.readOnly = true;
+    try {
+      await action(updatePublished, async () => {
+        const { item: updated } = await api(`/items/${encodeURIComponent(item.id)}/update-published`, {
+          revision: state.item.revision,
+          markdown: editor.value,
+        });
+        state.item = updated;
+        editor.value = updated.content.markdown;
+        savedMarkdown = editor.value;
+        updateMarkdownPreview();
+        publishedStatus.textContent = 'Correction enregistrée. Le site peut prendre une minute pour afficher la nouvelle version.';
+        await refresh(true);
+      });
+    } finally {
+      editor.readOnly = false;
+      syncPublishedEditor();
+    }
+  };
   save.onclick = () =>
     action(save, async () => {
       Object.entries(inputs).forEach(([k, v]) => (content[k] = v.value));
@@ -1363,7 +1412,7 @@ function openItem(item) {
     'div',
     { class: 'review-footer' },
     error,
-    el(
+    publishedBlog ? publishedStatus : el(
       'p',
       { class: 'hint' },
       inCalendar
@@ -1385,7 +1434,8 @@ function openItem(item) {
         'Fermer',
       ),
       ...(inCalendar ? [el('a', { href: '/launches', class: 'button primary' }, 'Ouvrir le calendrier')] : []),
-      ...(blogUrl ? [el('a', { href: blogUrl, target: '_blank', rel: 'noopener noreferrer', class: 'button primary' }, 'Voir l’article publié ↗')] : []),
+      ...(blogUrl ? [el('a', { href: blogUrl, target: '_blank', rel: 'noopener noreferrer', class: 'button secondary' }, 'Voir l’article publié ↗')] : []),
+      ...(publishedBlog ? [updatePublished] : []),
       ...(!immutable
         ? [
             ...(item.status !== 'rejected' ? [reject] : []),
@@ -1407,6 +1457,7 @@ function openItem(item) {
   if (!dialog.open) dialog.showModal();
 }
 function closeReview() {
+  if (state.pending && state.item?.status === 'published' && state.item.kind === 'blog') return;
   if (
     state.dirty &&
     !window.confirm('Fermer sans enregistrer vos modifications ?')
