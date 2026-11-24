@@ -483,7 +483,7 @@ class Generator:
             if product and product.get('requested_variants'):
                 prompt+=' Coloris à mettre en scène ensemble, chacun avec sa teinte exacte depuis la référence : '+dumps(product['requested_variants'])+'. Si la photo comprend d’autres coloris, montrez UNIQUEMENT les coloris demandés, pas tous ceux de la planche. '
             prompt+='\nRègles de mise en scène : '+RULES+'\nDirection photographique retenue : '+dumps({k:v for k,v in direction.items() if k not in ('store_scene_id','version','created_at')})+'\nLes anciennes ambiances génériques sont remplacées par cette direction. Respectez le lieu, la lumière, le cadrage et la justification d’usage retenus.'
-            prompt+='\n'+staging_prompt(direction.get('staging'),place,bool(scene_bytes),bool(product))
+            prompt+='\n'+staging_prompt(direction.get('staging'),place,bool(scene_bytes),bool(product),direction.get('camera'))
             extra_visual=content.get('visual_instructions') or brief.get('visual_instructions')
             if extra_visual:
                 prompt+='\nInstructions visuelles de l’agent ou du propriétaire à respecter : '+str(extra_visual)
@@ -522,14 +522,24 @@ class Generator:
             db.execute("UPDATE items SET content=?,media=?,status='review',error=NULL WHERE id=?",(dumps(content),dumps(assets),id))
             self.store.event(db,'Un contenu et son visuel sont prêts à relire.')
 
-def staging_prompt(staging,place,attached,has_product):
+def staging_prompt(staging,place,attached,has_product,camera=None):
     """Image instructions for the rotation chosen in scenes.plan_staging."""
+    text=_staging_text(staging,place,attached,has_product)
+    if place and camera:
+        from scenes import CAMERAS
+        text+=(' POINT DE VUE · '+CAMERAS.get(camera,camera)+'. La photo du lieu donne la pièce, pas le cadrage : déplacez la caméra comme si vous faisiez le tour du meuble. '
+               'Prolongez de façon plausible ce que la photo ne montre pas (suite du mur d’instruments, du tapis, des rayons ou de la vitrine) avec les mêmes matières, couleurs et lumière ; '
+               'n’inventez ni pièce, ni fenêtre, ni mobilier incohérent avec la photo, et laissez illisibles les étiquettes et textes du décor.')
+    return text
+
+
+def _staging_text(staging,place,attached,has_product):
     subject='le produit' if has_product else 'le geste ou le matériel illustré'
     where=''
     if place:
         where=(' La photo du LIEU jointe en dernier est notre vrai magasin' if attached else ' Le lieu est notre magasin')+' : '+place['label']+(' — '+place['description'] if place.get('description') else '')+'.'
     if staging=='store':
-        return 'MISE EN SCÈNE · dans le magasin.'+where+' Placez '+subject+' DANS ce lieu de façon crédible (posé sur le canapé, appuyé au mur, sur un stand ou un support adapté), à l’échelle réelle, avec ombres et reflets cohérents. Conservez l’architecture, le mobilier, les matières et la lumière du lieu ; changez librement le point de vue et le cadrage. N’ajoutez aucun mobilier qui contredise la photo.'
+        return 'MISE EN SCÈNE · dans le magasin.'+where+' Placez '+subject+' DANS ce lieu de façon crédible (posé sur le canapé, appuyé au mur, sur un stand ou un support adapté), à l’échelle réelle, avec ombres et reflets cohérents. Conservez l’architecture, le mobilier, les matières et la lumière du lieu. N’ajoutez aucun mobilier qui contredise la photo.'
     if staging=='in_use':
         return 'MISE EN SCÈNE · en main. Une personne joue ou utilise '+subject+' avec un geste juste (position des mains, posture, réglage plausible) ; cadrage sur le geste et '+subject+'. Personne générique non identifiable (visage de trois quarts, partiellement hors champ ou flou), âge, style et tenue variés d’un post à l’autre ; jamais une célébrité, un client ou un employé reconnaissable.'+(where+' La scène se passe dans ce lieu.' if place else '')
     if staging=='detail':

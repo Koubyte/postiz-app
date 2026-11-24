@@ -80,7 +80,8 @@ async function refresh() {
   const result = await connectionApi();
   connected = result.connected;
   byId('mcp-url').value = result.url;
-  byId('bot-instructions').value = result.instructions;
+  byId('bot-instructions').value = result.bot_prompt || result.instructions;
+  if (byId('bot-full-instructions')) byId('bot-full-instructions').value = result.instructions;
   applyRulesToForm(result.rules);
   byId('connection-state').textContent = result.last_used_at
     ? 'Connecteur utilisé le ' + new Date(result.last_used_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }) + ' (Paris).'

@@ -70,6 +70,7 @@ def test_owner_api_v2_auth_rules_catalogue_activity_and_requests(tmp_path, monke
         conn = client.get('/editorial/api/agent-connection').json()
         assert conn['rules']['weekly_blog_link'] is True
         assert 'Mentionner l’atelier luthier de Forbach.' in conn['instructions']
+        assert 'get_editorial_context' in conn['bot_prompt'] and len(conn['bot_prompt']) < 2000
 
         # Catalogue search endpoint
         monkeypatch.setattr(module.agent_service._generator(), 'products', lambda force=False: [

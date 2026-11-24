@@ -16,7 +16,7 @@ from publisher import Publisher
 from media import MediaBlocked
 from conversation import Conversation
 from companion import Companion
-from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS
+from agent import AgentService, BearerGate, build_mcp, INSTRUCTIONS, BOT_PROMPT
 from spacing import calendar_times as read_calendar, reservations, available_slot
 from overview import list_contents, content_detail
 from strategy import Strategy, JOBS as STRATEGY_JOBS
@@ -604,7 +604,7 @@ async def agent_connection(request:Request):
     await actor(request)
     rules=store.get_rules()
     instructions=INSTRUCTIONS+('\n\nConsignes personnalisées du propriétaire :\n'+rules['custom_instructions'] if rules.get('custom_instructions') else '')
-    return {**agent_service.token_status(),'keys':agent_service.list_agent_keys(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':instructions,'rules':rules}
+    return {**agent_service.token_status(),'keys':agent_service.list_agent_keys(),'url':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/agent/mcp','instructions':instructions,'bot_prompt':BOT_PROMPT,'rules':rules}
 
 @app.post('/editorial/api/agent-connection')
 async def change_agent_connection(request:Request):

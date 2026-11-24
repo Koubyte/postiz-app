@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Règles &amp; Grok Bot · Planète Laser</title>
-    <script src="/editorial/static/embed.js?v=v2-4"></script>
-    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-4" />
-    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-4" />
-    <link rel="stylesheet" href="/editorial/static/connect.css?v=v2-4" />
-    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-4" />
-    <script src="/editorial/static/connect.js?v=v2-4" defer></script>
+    <script src="/editorial/static/embed.js?v=v2-5"></script>
+    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-5" />
+    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-5" />
+    <link rel="stylesheet" href="/editorial/static/connect.css?v=v2-5" />
+    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-5" />
+    <script src="/editorial/static/connect.js?v=v2-5" defer></script>
   </head>
   <body>
     <main class="connect-page connect-v2">
@@ -126,12 +126,16 @@
         <hr class="connect-divider" />
         <h3>Donner son rôle au Bot</h3>
         <p class="hint">
-          Copiez ces instructions dans votre Bot Planète Laser. Demandez-lui ensuite d’appeler
-          <strong>get_editorial_context</strong> pour vérifier la connexion.
+          Collez ce texte une seule fois dans les instructions de votre Bot Planète Laser. Il ne change plus : à chaque conversation, le Bot récupère lui-même les consignes à jour (rédaction, photos du magasin, règles ci-dessus) avec
+          <strong>get_editorial_context</strong>.
         </p>
-        <label for="bot-instructions">Instructions du community manager</label>
+        <label for="bot-instructions">Rôle du community manager</label>
         <textarea id="bot-instructions" readonly rows="8"></textarea>
-        <button type="button" id="copy-instructions" class="button secondary" disabled>Copier les instructions</button>
+        <button type="button" id="copy-instructions" class="button secondary" disabled>Copier le rôle</button>
+        <details class="connect-full-instructions">
+          <summary>Voir les consignes complètes envoyées au Bot à chaque conversation</summary>
+          <textarea id="bot-full-instructions" readonly rows="12"></textarea>
+        </details>
 
         <details>
           <summary>Gérer l’accès</summary>

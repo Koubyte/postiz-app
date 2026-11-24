@@ -62,7 +62,7 @@ def test_rotation_changes_staging_place_and_matches_tags(store):
     assert second['staging'] != first['staging']
     assert second['store_scene']['id'] != first['store_scene']['id'] and second['store_scene']['id'] != drums['id']
     forced = plan_staging(store, {'id': 'y', 'content': {'staging': 'lifestyle'}}, {}, product, [])
-    assert forced == {'staging': 'lifestyle', 'store_scene': None}
+    assert forced == {'staging': 'lifestyle', 'camera': None, 'store_scene': None}
 
 
 def test_without_shop_photos_the_store_staging_is_never_picked(store):
@@ -107,10 +107,12 @@ def test_shop_photo_travels_as_a_location_reference(store, monkeypatch):
     assert roles == ['product', 'scene'] and sent['reference_images'][1]['mime_type'] == 'image/jpeg'
     assert 'MISE EN SCÈNE · dans le magasin' in sent['prompt'] and 'Canapés chesterfield' in sent['prompt']
     assert 'Pas de fausse photo de notre magasin' not in sent['prompt']
+    assert 'POINT DE VUE' in sent['prompt'] and 'Prolongez de façon plausible' in sent['prompt']
     item = store.item(identifier)
     direction = item['media']['visual_direction']
     assert direction['staging'] == 'store' and direction['store_scene_id'] == scene['id'] and direction['store_scene_attached']
     assert direction['setting'] == 'store' and item['content']['template'] in ('classic', 'minimal', 'raw')
+    assert direction['camera'] in ('left', 'right', 'low', 'high', 'wide', 'reverse', 'front')
     assert list_scenes(store)[0]['recent_uses'] == 1
 
     def scene_not_acknowledged(path, payload, **kwargs):
@@ -162,3 +164,17 @@ def test_same_furniture_is_not_used_twice_in_a_row_and_tag_matches_win_ties(stor
     # sofa_b is unused, but it is the same Chesterfield: the next visual moves to the armchair.
     after_sofa = plan_staging(store, item, {}, {'title': 'Ampli basse'}, [{'staging': 'store', 'store_scene_id': sofa_a['id']}])
     assert after_sofa['store_scene']['id'] == armchair['id']
+
+
+def test_camera_position_changes_from_one_visual_to_the_next(store):
+    sofa = add_scene(store, photo('navy'), 'Chesterfield · face', '', ['tous'])
+    item = {'id': 'x', 'content': {'staging': 'store', 'store_scene_id': sofa['id']}}
+    history, cameras = [], []
+    for _ in range(4):
+        plan = plan_staging(store, item, {}, {'title': 'Guitare'}, history)
+        history.insert(0, {'staging': plan['staging'], 'store_scene_id': sofa['id'], 'camera': plan['camera']})
+        cameras.append(plan['camera'])
+    assert len(set(cameras)) == 4
+    detail = plan_staging(store, {'id': 'y', 'content': {'staging': 'detail', 'store_scene_id': sofa['id']}}, {}, {'title': 'Guitare'}, [])
+    assert detail['camera'] in ('close', 'low', 'high')
+    assert plan_staging(store, {'id': 'z', 'content': {'staging': 'lifestyle'}}, {}, {'title': 'Guitare'}, [])['camera'] is None

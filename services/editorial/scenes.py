@@ -16,6 +16,23 @@ STAGINGS={
     'detail':'Gros plan : une caractéristique visible du produit, profondeur de champ courte',
 }
 MAX_SCENES=40
+# Where the camera stands in the real place. The shop photo gives the room, not the framing:
+# the image model walks around it and extrapolates what the photo does not show.
+CAMERAS={
+    'front':'Face au mobilier, à hauteur de poitrine, recadré plus près que la photo',
+    'left':'Trois quarts gauche : la caméra a contourné le mobilier par la gauche, le décor glisse en perspective',
+    'right':'Trois quarts droite : la caméra a contourné le mobilier par la droite, le décor glisse en perspective',
+    'low':'Contre-plongée au ras du tapis, grand angle : le produit domine, le décor monte derrière lui',
+    'high':'Plongée légère depuis une personne debout : on voit le produit posé et le motif du tapis',
+    'close':'Plan serré sur le produit, le lieu reconnaissable mais flou en arrière-plan',
+    'wide':'Plan large reculé qui montre davantage le magasin autour (murs, rayons, vitrine), prolongé de façon cohérente',
+    'reverse':'Contrechamp : la caméra se place à côté du mobilier et regarde vers l’autre côté de la pièce, reconstruit de façon plausible à partir de ce que montre la photo',
+}
+CAMERAS_BY_STAGING={
+    'store':['left','right','low','high','wide','reverse','front'],
+    'in_use':['left','right','front','low','wide'],
+    'detail':['close','low','high'],
+}
 SETTINGS={
     'store':'Un vrai lieu du magasin Planète Laser, d’après la photo du lieu fournie',
     'home':'Intérieur de vie : salon, pièce de musique, appartement',
@@ -167,7 +184,14 @@ def plan_staging(store,item,brief,product,history):
         labels={s['id']:place(s) for s in scenes}
         last_place=labels.get(recent_scenes[0]) if recent_scenes else None
         scene=min(eligible,key=lambda s:(s['id'] in recent_scenes[:3],place(s)==last_place,recent_scenes.count(s['id']),s['id'] not in matched,s['recent_uses'],s['created']))
-    return {'staging':staging,'store_scene':{k:scene[k] for k in ('id','label','description','tags')} if scene else None}
+    camera=None
+    if scene:
+        # Never the same viewpoint twice in a row, and rotate viewpoints within each place.
+        options=CAMERAS_BY_STAGING.get(staging,['front'])
+        recent_cameras=[h.get('camera') for h in history]
+        same_place=[h.get('camera') for h in history if h.get('store_scene_id')==scene['id']]
+        camera=min(options,key=lambda c:(c==(recent_cameras[0] if recent_cameras else None),same_place.count(c),recent_cameras.count(c),options.index(c)))
+    return {'staging':staging,'camera':camera,'store_scene':{k:scene[k] for k in ('id','label','description','tags')} if scene else None}
 
 
 def next_template(store,has_product,exclude=None):
@@ -212,6 +236,8 @@ def choose(store,ask,item,brief,product):
     plan=plan_staging(store,item,brief,product,history)
     place=plan['store_scene']
     staging_text='\nMise en scène imposée pour ce post : '+STAGINGS[plan['staging']]+'. Les trois pistes respectent cette mise en scène et varient placement, lumière et cadrage.'
+    if plan.get('camera'):
+        staging_text+='\nPoint de vue imposé : '+CAMERAS[plan['camera']]+'. Les trois pistes gardent ce point de vue et varient placement et lumière.'
     if place:
         staging_text+='\nLieu réel imposé : notre magasin, photo du lieu jointe à la génération — '+place['label']+(' : '+place['description'] if place['description'] else '')+'. Utilisez setting="store" et décrivez précisément où et comment le produit y est placé (posé sur le canapé, appuyé au mur, sur un stand…) sans inventer de mobilier absent de ce lieu.'
     prompt='Vous préparez la direction photographique, pas le texte du post. '+RULES+staging_text+'\nProposez trois mises en situation adaptées au produit et à l’angle éditorial, dans trois lieux différents lorsque le brief le permet. Si un lieu est explicitement imposé par le propriétaire, conservez-le et variez lumière et cadrage. Une ancienne mention générique de « studio chaleureux » ou de bois n’est pas une contrainte de charte. Évitez les scènes récentes ci-dessous. Pour chaque piste, expliquez son adéquation au produit sans inventer ses caractéristiques. Intérieurs uniquement sauf contexte extérieur explicitement documenté (dans ce cas privilégiez tout de même une proposition intérieure sûre).\nProduit vérifié : '+dumps(product)+'\nSujet : '+dumps({k:item['content'].get(k) for k in ('title','facebook','instagram','excerpt','scene','_visual_feedback')})+'\nBrief : '+dumps(brief)+'\nDirections récentes (la première est la plus récente) : '+dumps(history)+'\nAnciens briefs de décor, pas une analyse de pixels : '+dumps(legacy)+'\nCatégories de lieu : '+dumps({k:v for k,v in SETTINGS.items() if place or k!='store'})+'\nÉclairages autorisés : '+dumps(sorted(LIGHTS))+'\nCadrages autorisés : '+dumps(sorted(ANGLES))+'\nJSON : {"directions":[{"setting":"catégorie autorisée","lighting":"éclairage autorisé","angle":"cadrage autorisé","scene":"description concrète du lieu, placement du produit, matériaux, lumière, cadrage et accessoires de contexte discrets","product_fit":"pourquoi ce cadre et cette installation conviennent à CE produit ou conseil"}]}. Exactement trois pistes différentes. Aucun texte dans l’image.'
@@ -226,7 +252,7 @@ def choose(store,ask,item,brief,product):
         if place:option['setting']='store'
         elif option['setting']=='store':option['setting']='architecture'
     chosen=select(options,history)
-    direction={**chosen,'staging':plan['staging'],'store_scene_id':place['id'] if place else None,'store_scene_label':place['label'] if place else None,'version':VERSION,'created_at':now()}
+    direction={**chosen,'staging':plan['staging'],'camera':plan.get('camera'),'store_scene_id':place['id'] if place else None,'store_scene_label':place['label'] if place else None,'version':VERSION,'created_at':now()}
     with store.db() as db:
         current=store.item(item['id'],db)
         if current['revision']!=item['revision'] or current['status'] not in ('queued','generating','rendering','failed','review'):raise Conflict('Le contenu a changé pendant le choix du décor.')
