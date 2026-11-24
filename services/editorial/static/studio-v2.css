@@ -989,6 +989,82 @@ textarea.blog-editor.with-toolbar {
 }
 
 /* ---------- Connect & Rules Page v2 ---------- */
+.scenes-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.scenes-heading .hint {
+  max-width: 560px;
+  margin: 0;
+}
+.scenes-upload {
+  cursor: pointer;
+  flex: none;
+}
+.scenes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.scene-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.scene-card.is-paused {
+  opacity: .6;
+}
+.scene-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--panel2);
+}
+.scene-card input,
+.scene-card textarea {
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.scene-card .hint {
+  margin: 0;
+  font-size: 11px;
+}
+.scene-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.scene-actions .button {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.scene-actions .scene-delete {
+  margin-left: auto;
+}
+.visual-drawer > label {
+  margin-bottom: 10px;
+}
+.scene-actions .scene-delete:hover {
+  color: var(--danger);
+}
+.scenes-empty {
+  grid-column: 1 / -1;
+}
+.visual-staging {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
 .connect-page.connect-v2 {
   max-width: 920px;
   margin: 0 auto;

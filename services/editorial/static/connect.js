@@ -28,7 +28,7 @@ function fail(error) {
 function applyRulesToForm(rules) {
   if (!rules || rulesDirty) return;
   if (byId('rules-custom-instructions')) byId('rules-custom-instructions').value = rules.custom_instructions || '';
-  if (byId('rules-default-template')) byId('rules-default-template').value = rules.default_template || 'classic';
+  if (byId('rules-default-template')) byId('rules-default-template').value = rules.default_template || 'auto';
   if (byId('rules-signature-note')) byId('rules-signature-note').value = rules.signature_note || '';
   if (byId('rules-weekly-blog-link')) byId('rules-weekly-blog-link').checked = Boolean(rules.weekly_blog_link);
 }
@@ -207,3 +207,79 @@ setInterval(() => {
     refreshActivity();
   }
 }, 15000);
+
+// Shop photo library: real places the studio stages products in.
+const scenesApi = (path = '', data) => jsonApi('/editorial/api/store-scenes' + path, data);
+function sceneCard(scene) {
+  const card = document.createElement('article');
+  card.className = 'scene-card' + (scene.active ? '' : ' is-paused');
+  const img = document.createElement('img');
+  img.src = scene.url; img.alt = scene.label; img.loading = 'lazy';
+  const label = document.createElement('input');
+  label.value = scene.label; label.maxLength = 80; label.setAttribute('aria-label', 'Nom du lieu');
+  const description = document.createElement('textarea');
+  description.rows = 3; description.maxLength = 600; description.value = scene.description || '';
+  description.placeholder = 'Ce qu’on voit et ce qu’on peut y poser (ex. deux canapés en cuir face au mur de guitares)';
+  description.setAttribute('aria-label', 'Description du lieu');
+  const tags = document.createElement('input');
+  tags.value = (scene.tags || []).join(', '); tags.placeholder = 'Pour : guitares, claviers, batterie, sono… (vide = tout)';
+  tags.setAttribute('aria-label', 'Produits adaptés à ce lieu');
+  const meta = document.createElement('p');
+  meta.className = 'hint';
+  meta.textContent = (scene.active ? 'Actif' : 'En pause') + ' · utilisé ' + (scene.recent_uses || 0) + ' fois récemment';
+  const actions = document.createElement('div');
+  actions.className = 'scene-actions';
+  const save = document.createElement('button');
+  save.type = 'button'; save.className = 'button secondary'; save.textContent = 'Enregistrer';
+  const toggle = document.createElement('button');
+  toggle.type = 'button'; toggle.className = 'button ghost'; toggle.textContent = scene.active ? 'Mettre en pause' : 'Réactiver';
+  const remove = document.createElement('button');
+  remove.type = 'button'; remove.className = 'button ghost scene-delete'; remove.textContent = 'Supprimer';
+  const run = async (button, fn) => {
+    button.disabled = true;
+    try { await fn(); await refreshScenes(); } catch (error) { byId('scenes-status').textContent = error.message; } finally { button.disabled = false; }
+  };
+  const payload = () => ({ label: label.value.trim(), description: description.value.trim(), tags: tags.value.split(',').map(t => t.trim()).filter(Boolean) });
+  save.onclick = () => run(save, async () => { await scenesApi('/' + encodeURIComponent(scene.id), payload()); byId('scenes-status').textContent = 'Lieu enregistré.'; });
+  toggle.onclick = () => run(toggle, () => scenesApi('/' + encodeURIComponent(scene.id), { ...payload(), active: !scene.active }));
+  remove.onclick = () => {
+    if (!confirm('Supprimer définitivement cette photo du magasin ?')) return;
+    run(remove, () => scenesApi('/' + encodeURIComponent(scene.id) + '/delete', {}));
+  };
+  actions.append(save, toggle, remove);
+  card.append(img, label, description, tags, meta, actions);
+  return card;
+}
+async function refreshScenes() {
+  const list = byId('scenes-list');
+  if (!list) return;
+  try {
+    const data = await scenesApi();
+    if (!data.scenes.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hint scenes-empty';
+      empty.textContent = 'Aucune photo pour l’instant : ajoutez vos canapés, murs d’instruments, coin batterie, scène… Les visuels utiliseront ces lieux à tour de rôle.';
+      list.replaceChildren(empty);
+    } else list.replaceChildren(...data.scenes.map(sceneCard));
+  } catch (error) { byId('scenes-status').textContent = error.message; }
+}
+byId('scene-files')?.addEventListener('change', async event => {
+  const files = [...event.target.files]; event.target.value = '';
+  let added = 0;
+  for (const file of files) {
+    byId('scenes-status').textContent = `Envoi de ${file.name}…`;
+    try {
+      const response = await fetch('/editorial/api/store-scenes', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Editorial-Action': '1', 'X-File-Name': encodeURIComponent(file.name) },
+        body: await file.arrayBuffer(),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || result.detail || 'Photo refusée.');
+      added += result.duplicate ? 0 : 1;
+    } catch (error) { byId('scenes-status').textContent = `${file.name} : ${error.message}`; await refreshScenes(); return; }
+  }
+  byId('scenes-status').textContent = added ? `${added} photo(s) ajoutée(s). Donnez-leur un nom et une description pour guider les visuels.` : 'Ces photos étaient déjà dans la bibliothèque.';
+  await refreshScenes();
+});
+refreshScenes();

@@ -247,6 +247,14 @@ window.StudioReview = (() => {
     return bar;
   }
 
+  const STAGING_LABELS = {
+    auto: 'Varier automatiquement',
+    store: 'Dans le magasin',
+    in_use: 'En main (quelqu’un qui joue)',
+    lifestyle: 'En situation, hors magasin',
+    detail: 'Gros plan',
+  };
+
   function buildVisualStudioPanel(item, callbacks) {
     const box = el('div', { class: 'visual-studio-box' });
     const content = item.content || {};
@@ -324,9 +332,31 @@ window.StudioReview = (() => {
         placeholder: 'Ex. Plan large sur une scène de club, lumière bleue, pas de texte incrusté…',
         value: content.visual_instructions || '',
       });
+      const stagingSel = el('select', { 'aria-label': 'Mise en scène' },
+        ...Object.entries(STAGING_LABELS).map(([value, label]) => el('option', { value }, label)));
+      stagingSel.value = content.staging || 'auto';
+      const placeSel = el('select', { 'aria-label': 'Lieu du magasin' }, el('option', { value: 'auto' }, 'Lieu choisi automatiquement'));
+      // The shop photo library is loaded only when the owner opens this drawer.
+      let placesLoaded = false;
+      const loadPlaces = async () => {
+        if (placesLoaded || typeof api !== 'function') return;
+        placesLoaded = true;
+        try {
+          const data = await api('/store-scenes');
+          for (const scene of data.scenes.filter((s) => s.active)) placeSel.append(el('option', { value: scene.id }, scene.label));
+          placeSel.value = content.store_scene_id || 'auto';
+          if (!data.scenes.length) placeSel.append(el('option', { value: 'auto', disabled: true }, 'Ajoutez des photos dans Règles & Grok Bot'));
+        } catch { placesLoaded = false; }
+      };
       const regenGo = el('button', { type: 'button', class: 'button primary' }, 'Lancer la génération d’image');
-      regenGo.onclick = () => callbacks.onRegenerateVisual?.(visualInput.value.trim(), regenGo);
-      regenDrawer.append(el('label', {}, 'Direction visuelle souhaitée', visualInput), regenGo);
+      regenGo.onclick = () => callbacks.onRegenerateVisual?.(visualInput.value.trim(), regenGo, {
+        staging: stagingSel.value,
+        store_scene_id: stagingSel.value === 'lifestyle' ? 'auto' : placeSel.value,
+      });
+      regenDrawer.append(
+        el('label', {}, 'Mise en scène', stagingSel), el('label', {}, 'Lieu du magasin', placeSel),
+        el('label', {}, 'Direction visuelle souhaitée', visualInput), regenGo);
+      regenDrawer.loadPlaces = loadPlaces;
 
       const uploadDrawer = el('div', { class: 'visual-drawer', hidden: true });
       const purposeSel = el('select', {},
@@ -345,13 +375,19 @@ window.StudioReview = (() => {
         el('button', {
           type: 'button',
           class: 'button secondary',
-          onclick: () => { regenDrawer.hidden = !regenDrawer.hidden; uploadDrawer.hidden = true; },
+          onclick: () => { regenDrawer.hidden = !regenDrawer.hidden; uploadDrawer.hidden = true; if (!regenDrawer.hidden) regenDrawer.loadPlaces(); },
         }, 'Régénérer l’image'),
         el('button', {
           type: 'button',
           class: 'button secondary',
           onclick: () => { uploadDrawer.hidden = !uploadDrawer.hidden; regenDrawer.hidden = true; },
         }, 'Importer photo'));
+      const direction = item.media?.visual_direction;
+      if (direction?.staging) {
+        box.append(el('p', { class: 'hint visual-staging' },
+          'Mise en scène : ' + (STAGING_LABELS[direction.staging] || direction.staging)
+          + (direction.store_scene_label ? ' · ' + direction.store_scene_label : '')));
+      }
       box.append(actionRow, regenDrawer, uploadDrawer);
     }
 

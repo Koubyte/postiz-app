@@ -331,3 +331,15 @@ test('queued calls run after a slot is released and can be cancelled', async () 
   const releaseNext = await next; releaseNext();
   const releaseLast = await acquire(); releaseLast();
 });
+
+test('location photos are labelled as scenes, never as product variants', () => {
+  const product={mime_type:'image/png',b64_json:png};
+  const scene={mime_type:'image/jpeg',b64_json:jpeg,role:'scene'};
+  const references=prepareReferenceImages({reference_images:[product,scene]});
+  assert.deepEqual(references.map(image=>image.role),['product','scene']);
+  const prompt=prepareImage({prompt:'Guitar on the shop sofa',reference_images:[product,scene]},references);
+  assert.match(prompt,/1 product reference image\(s\) are attached in order, plus 1 location reference/);
+  assert.match(prompt,/Reference image\(s\) 2 show a real location/);
+  assert.throws(()=>prepareReferenceImages({reference_images:[{...product,role:'backdrop'}]}),e=>e.code==='invalid_reference_image');
+  assert.doesNotMatch(prepareImage({prompt:'x',reference_images:[product]}),/location/);
+});

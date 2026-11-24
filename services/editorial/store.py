@@ -14,7 +14,7 @@ EXTERNAL_VISUAL_WARNING = 'Le titre a changé ; vérifiez que le texte éventuel
 VISUAL_TEMPLATES = ('classic', 'minimal', 'raw', 'tip_card')
 DEFAULT_EDITORIAL_RULES = {
     'custom_instructions': '',
-    'default_template': 'minimal',
+    'default_template': 'auto',
     'weekly_blog_link': True,
     'signature_note': 'Planète Laser · Forbach (Moselle-Est) — conseil, essai en magasin et prix du web depuis 1989.',
 }
@@ -74,6 +74,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS visual_directions (item_id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(item_id,revision));
             CREATE TABLE IF NOT EXISTS companion_articles (parent_id TEXT PRIMARY KEY, article_id TEXT UNIQUE NOT NULL, parent_revision INTEGER NOT NULL, parent_hash TEXT NOT NULL, actor TEXT NOT NULL, created TEXT NOT NULL, article_revision INTEGER NOT NULL, state TEXT NOT NULL, auto_hash TEXT, source_snapshot TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS demand_items (item_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, proposal_index INTEGER NOT NULL, brief TEXT NOT NULL, product TEXT, UNIQUE(message_id,proposal_index));
+            CREATE TABLE IF NOT EXISTS store_scenes (id TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', filename TEXT NOT NULL, sha256 TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created TEXT NOT NULL, actor TEXT);
             ''')
             if 'blog_requested' not in {r[1] for r in db.execute('PRAGMA table_info(items)')}:
                 db.execute('ALTER TABLE items ADD COLUMN blog_requested INTEGER NOT NULL DEFAULT 0')
@@ -182,7 +183,7 @@ class Store:
             custom=data.get('custom_instructions',current['custom_instructions'])
             if not isinstance(custom,str) or len(custom)>8000:raise Conflict('Consignes personnalisées invalides (8 000 caractères maximum).')
             template=data.get('default_template',current['default_template'])
-            if template not in VISUAL_TEMPLATES:raise Conflict('Gabarit visuel par défaut inconnu.')
+            if template not in (*VISUAL_TEMPLATES,'auto'):raise Conflict('Gabarit visuel par défaut inconnu.')
             weekly_blog=data.get('weekly_blog_link',current['weekly_blog_link'])
             if type(weekly_blog) is not bool:raise Conflict('Option article hebdomadaire invalide.')
             signature=data.get('signature_note',current['signature_note'])

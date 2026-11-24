@@ -360,7 +360,7 @@ class Generator:
         content['product_id']=brief.get('product_id');content['scene']=brief.get('scene','Un environnement pertinent pour le produit et son usage, à varier selon les scènes récentes')
         if item['content'].get('template') or brief.get('template'):
             content['template']=item['content'].get('template') or brief.get('template')
-        elif item['kind']=='social' and rules.get('default_template') in ('classic','minimal','raw','tip_card'):
+        elif item['kind']=='social' and rules.get('default_template') in ('classic','minimal','raw','tip_card'):  # 'auto' rotates at render
             content['template']=rules['default_template']
         if brief.get('visual_instructions'):
             content['visual_instructions']=brief['visual_instructions']
@@ -408,7 +408,11 @@ class Generator:
         # the owner's structured price after resolving a previously missing product.
         if product and product.get('price_mode'):
             content['price_text']=product_price_text(product)
-        template=content.get('template') or brief.get('template') or 'classic'
+        template=content.get('template') or brief.get('template')
+        if not template:
+            # No explicit frame: alternate the designed templates instead of repeating one.
+            from scenes import next_template
+            template=content['template']=next_template(self.store,bool(product),item['id'])
         recomposite_only=bool(content.pop('_recomposite_only',False))
         if recomposite_only:
             assets=recomposite_item_media(self.store,{**item,'content':content},product)
@@ -461,15 +465,25 @@ class Generator:
             direction={'setting':'tip_card','lighting':'soft_neutral','angle':'front_context','scene':'Carte éditoriale typographique Planète Laser','product_fit':'Mise en valeur du conseil écrit.'}
             reference_used=False
         else:
-            from scenes import choose, RULES
+            from scenes import choose, RULES, scene_file
             direction=choose(self.store,self.ask,item,brief,product)
-            prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Décor, lumière et cadrage adaptés à l’usage du produit selon la direction ci-dessous. La charte graphique sera appliquée après génération ; aucune teinte verte ou matière récurrente imposée dans la photo. Aucun texte publicitaire, prix, habillage graphique ou watermark ajouté. Pas de fausse photo de notre magasin. Composition élégante, naturelle, photographique. Image finale 4:5, sujet principal entier dans la zone centrale, espace calme autour du sujet pour les recadrages. '
+            # A real shop photo travels with the product photos when the bridge has room (3 references max).
+            scene_bytes=None;scene_payload=None;place=None
+            if direction.get('store_scene_id'):
+                place,raw_scene=scene_file(self.store,direction['store_scene_id'])
+                if len(references)<3:
+                    from PIL import Image
+                    scene_image=Image.open(io.BytesIO(raw_scene)).convert('RGB');scene_image.thumbnail((1536,1536),Image.Resampling.LANCZOS)
+                    buffer=io.BytesIO();scene_image.save(buffer,'JPEG',quality=88);scene_bytes=buffer.getvalue()
+                    scene_payload={'mime_type':'image/jpeg','b64_json':base64.b64encode(scene_bytes).decode(),'role':'scene'}
+            prompt='Photographie éditoriale réaliste pour une enseigne musicale française. Décor, lumière et cadrage adaptés à l’usage du produit selon la direction ci-dessous. La charte graphique sera appliquée après génération ; aucune teinte verte ou matière récurrente imposée dans la photo. Aucun texte publicitaire, prix, habillage graphique ou watermark ajouté. '+('La scène se déroule dans notre vrai magasin, d’après la photo du lieu jointe. ' if scene_bytes else 'Pas de fausse photo de notre magasin. ')+'Composition élégante, naturelle, photographique. Image finale 4:5, sujet principal entier dans la zone centrale, espace calme autour du sujet pour les recadrages. '
             if product:
                 prompt+='Utilisez impérativement la PHOTO DE RÉFÉRENCE JOINTE : '+product['title']+' (EAN '+str(product.get('ean',''))+'). Créez une vraie mise en scène de CE produit dans un décor musical soigné et crédible. Le produit doit être présent dans l’image finale, posé naturellement ou utilisé de manière plausible. Préservez son modèle exact, sa couleur, ses proportions, le nombre et la disposition de ses commandes, ses logos et ses particularités visibles. Ne changez pas de variante et n’inventez pas d’accessoire fourni. Harmonisez lumière, perspective, matière et ombres pour une photographie cohérente. Ne produisez pas un décor vide, un détourage, un montage collé ou un objet transparent. Ne vous contentez pas de décrire la référence : incluez-la dans l’appel à imagegen. '
             else:prompt+='Scène pertinente illustrant ce conseil, sans marque ni produit identifiable, aucun schéma technique inventé. '
             if product and product.get('requested_variants'):
                 prompt+=' Coloris à mettre en scène ensemble, chacun avec sa teinte exacte depuis la référence : '+dumps(product['requested_variants'])+'. Si la photo comprend d’autres coloris, montrez UNIQUEMENT les coloris demandés, pas tous ceux de la planche. '
-            prompt+='\nRègles de mise en scène : '+RULES+'\nDirection photographique retenue : '+dumps(direction)+'\nLes anciennes ambiances génériques sont remplacées par cette direction. Respectez le lieu, la lumière, le cadrage et la justification d’usage retenus.'
+            prompt+='\nRègles de mise en scène : '+RULES+'\nDirection photographique retenue : '+dumps({k:v for k,v in direction.items() if k not in ('store_scene_id','version','created_at')})+'\nLes anciennes ambiances génériques sont remplacées par cette direction. Respectez le lieu, la lumière, le cadrage et la justification d’usage retenus.'
+            prompt+='\n'+staging_prompt(direction.get('staging'),place,bool(scene_bytes),bool(product))
             extra_visual=content.get('visual_instructions') or brief.get('visual_instructions')
             if extra_visual:
                 prompt+='\nInstructions visuelles de l’agent ou du propriétaire à respecter : '+str(extra_visual)
@@ -477,13 +491,17 @@ class Generator:
             if product and product.get('reference_images'):
                 prompt+=' Correspondance des références jointes, dans cet ordre : '+dumps([{'reference':i+1,'coloris':r['label']} for i,r in enumerate(product['reference_images'])])+'. Montrez ensemble un exemplaire de chaque coloris demandé. '
             payload={'model':'codex','prompt':prompt,'size':'1024x1536','n':1,'response_format':'b64_json'}
-            if len(reference_payloads)==1:payload['reference_image']=reference_payloads[0]
-            elif reference_payloads:payload['reference_images']=reference_payloads
+            sent=reference_payloads+([scene_payload] if scene_payload else [])
+            if len(sent)==1 and not scene_payload:payload['reference_image']=sent[0]
+            elif sent:payload['reference_images']=sent
             result=self.bridge('/images/generations',payload,timeout=340)
-            expected_hashes=[hashlib.sha256(reference).hexdigest() for reference in references]
-            received_hashes=result.get('reference_images_sha256') or ([result.get('reference_image_sha256')] if len(references)==1 else [])
-            reference_used=bool(references and received_hashes==expected_hashes)
+            expected_hashes=[hashlib.sha256(reference).hexdigest() for reference in references]+([hashlib.sha256(scene_bytes).hexdigest()] if scene_bytes else [])
+            received_hashes=result.get('reference_images_sha256') or ([result.get('reference_image_sha256')] if len(sent)==1 else [])
+            confirmed=bool(sent and received_hashes==expected_hashes)
+            reference_used=bool(references and confirmed)
             if product and not reference_used:raise GenerationError('La génération n’a pas confirmé la réception de la photo de référence. Aucun visuel produit retenu.')
+            if scene_bytes and not confirmed:raise GenerationError('La génération n’a pas confirmé la réception de la photo du magasin. Aucun visuel retenu.')
+            direction={**direction,'store_scene_attached':bool(scene_bytes)}
             try:background=base64.b64decode(result['data'][0]['b64_json'],validate=True)
             except (ValueError,KeyError,IndexError):raise GenerationError('Le visuel généré est invalide.')
         render_content={**content,'kind':brief.get('kind','advice')}
@@ -503,6 +521,21 @@ class Generator:
             if current['revision']!=item['revision']:raise Conflict('Le contenu a changé pendant la création du visuel.')
             db.execute("UPDATE items SET content=?,media=?,status='review',error=NULL WHERE id=?",(dumps(content),dumps(assets),id))
             self.store.event(db,'Un contenu et son visuel sont prêts à relire.')
+
+def staging_prompt(staging,place,attached,has_product):
+    """Image instructions for the rotation chosen in scenes.plan_staging."""
+    subject='le produit' if has_product else 'le geste ou le matériel illustré'
+    where=''
+    if place:
+        where=(' La photo du LIEU jointe en dernier est notre vrai magasin' if attached else ' Le lieu est notre magasin')+' : '+place['label']+(' — '+place['description'] if place.get('description') else '')+'.'
+    if staging=='store':
+        return 'MISE EN SCÈNE · dans le magasin.'+where+' Placez '+subject+' DANS ce lieu de façon crédible (posé sur le canapé, appuyé au mur, sur un stand ou un support adapté), à l’échelle réelle, avec ombres et reflets cohérents. Conservez l’architecture, le mobilier, les matières et la lumière du lieu ; changez librement le point de vue et le cadrage. N’ajoutez aucun mobilier qui contredise la photo.'
+    if staging=='in_use':
+        return 'MISE EN SCÈNE · en main. Une personne joue ou utilise '+subject+' avec un geste juste (position des mains, posture, réglage plausible) ; cadrage sur le geste et '+subject+'. Personne générique non identifiable (visage de trois quarts, partiellement hors champ ou flou), âge, style et tenue variés d’un post à l’autre ; jamais une célébrité, un client ou un employé reconnaissable.'+(where+' La scène se passe dans ce lieu.' if place else '')
+    if staging=='detail':
+        return 'MISE EN SCÈNE · gros plan sur une caractéristique VISIBLE sur la photo de référence (commandes, matière, finition, détail de lutherie), profondeur de champ courte ; aucun détail inventé.'+(where+' Ce lieu apparaît en arrière-plan flou.' if place else '')
+    return 'MISE EN SCÈNE · en situation, chez un musicien ou dans son lieu d’usage, selon la direction retenue. Pas de magasin.'
+
 
 def validate_plan(value,products,week):
     if not isinstance(value,dict) or not isinstance(value.get('subjects'),list) or len(value['subjects'])!=7:raise GenerationError('Le plan doit contenir exactement sept sujets.')

@@ -1238,13 +1238,15 @@ function openItem(item, queue = null) {
                 : 'Génération avec ce gabarit lancée…',
             );
           }),
-        onRegenerateVisual: (instructions, btn) =>
+        onRegenerateVisual: (instructions, btn, choice = {}) =>
           action(btn, async () => {
             await api(`/items/${encodeURIComponent(item.id)}/visual`, {
               revision: state.item.revision,
               visual_instructions: instructions || undefined,
               template: content.template,
               recomposite_only: false,
+              staging: choice.staging,
+              store_scene_id: choice.store_scene_id,
             });
             await reloadReviewItem('Génération du nouveau visuel lancée…');
           }),

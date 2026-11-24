@@ -41,7 +41,9 @@ Gestion complète de la semaine :
 Mode hybride rédaction + visuels & carrousels :
 - Mode assisté (recommandé pour les posts produit) : `prepare_content` avec un brief de FAITS vérifiés + l’angle choisi + le public visé. N’y dictez pas de « texte souhaité » : le rédacteur du studio écrit selon le guide, puis vous améliorez via `edit_content`, `revise_content(scope='text'|'visual'|'both')` ou `generate_visual`.
 - Mode direct : `create_direct_draft(..., generate_visual=True, template=..., visual_instructions=..., carousel_slides=...)` quand le propriétaire vous dicte un texte précis ou que vous avez écrit deux légendes conformes au guide ; `bind_catalogue_product` verrouille ensuite prix et stock.
-- Visuels : préférez `generate_visual` (décors variés par le studio). Si vous importez votre propre visuel, changez de décor d’un post à l’autre : jamais le même canapé, mur ou tapis sur des posts consécutifs.
+- Visuels vivants : préférez `generate_visual` (ou `create_direct_draft(generate_visual=True)`) à `import_final_visual` : seul le studio utilise les vraies photos du magasin et fait tourner automatiquement la mise en scène, le lieu et le gabarit pour que deux posts consécutifs ne se ressemblent pas. Mises en scène : `store` (dans le magasin, d’après une photo réelle du lieu : sur le canapé, au mur, sur un stand), `in_use` (quelqu’un qui joue, personne générique non identifiable), `lifestyle` (chez un musicien, en répète, sur scène), `detail` (gros plan). N’imposez `staging` ou `store_scene_id` que si le propriétaire le demande ou pour casser une répétition visible dans `recent_visuals`.
+- Photos du magasin : quand le propriétaire vous envoie des photos du magasin, enregistrez chaque lieu avec `add_store_photo` (nom court, description de ce qu’on voit et de ce qu’on peut y poser, usages : guitares, basses, claviers, batterie, sono, dj, lumière, micros, accessoires ou tous). Si vous n’avez pas les octets de l’image, demandez-lui de la déposer dans Studio IA → Règles & Grok Bot → Photos du magasin. Consultez la bibliothèque avec `list_store_scenes` ; mettez en pause un lieu inadapté avec `update_store_scene(active=false)`.
+- Si vous importez malgré tout votre propre visuel, changez de décor d’un post à l’autre : jamais le même canapé, mur ou tapis sur des posts consécutifs.
 - Contrôle visuel fin : `generate_visual` permet de générer ou refaire UNIQUEMENT l’image sans toucher aux textes, de choisir le gabarit (`classic`, `minimal`, `raw`, `tip_card`), ou de basculer en mode carrousel (2 à 5 slides via `carousel_slides`). Passez `recomposite_only=True` pour changer de gabarit, accroche ou slides instantanément (< 1 s) sans regénérer la scène photo. Variez les gabarits et les décors entre les posts.
 - Vous pouvez aussi rejeter (`reject_content`), relancer (`retry_content`), supprimer un brouillon raté (`delete_draft`) ou mettre à jour un article déjà en ligne (`update_published_article`) pour corriger ou enrichir son maillage interne et son SEO.
 - Si vous fournissez vos propres octets d’image (`attach_reference_image`, `import_final_visual`, `create_media_upload`), ne prétendez les avoir envoyés que si l’outil a réussi.
@@ -156,7 +158,8 @@ class AgentService:
         return result
     def create_direct(self,request_id,kind,fields,product_query='',scheduled_at=None,create_blog=False,
                       generate_visual=False,visual_instructions=None,template=None,price_mode=None,
-                      price=None,reference_image_url=None,reference_source_url=None,reference_owner_supplied=False):
+                      price=None,reference_image_url=None,reference_source_url=None,reference_owner_supplied=False,
+                      staging=None,store_scene_id=None):
         """Create a studio draft authored directly by the agent, with optional visual generation."""
         from generation import validate_content
         if kind not in ('social','blog') or not isinstance(fields,dict):raise Conflict('Indiquez un type social ou blog et ses champs de contenu.')
@@ -182,6 +185,8 @@ class AgentService:
         checked=validate_content(fields,kind)
         checked.pop('uncertainty',None)
         quality=self.quality_gate(checked) if kind=='social' else None
+        from scenes import checked_staging
+        staging,store_scene_id=checked_staging(self.store,staging,store_scene_id)
         if template and 'template' not in checked:checked['template']=template
         if visual and 'visual_instructions' not in checked:checked['visual_instructions']=visual
         payload={'operation':'create_direct_draft','kind':kind,'fields':fields,'product_query':query,'scheduled_at':scheduled_at,'create_blog':create_blog}
@@ -192,6 +197,8 @@ class AgentService:
         if price is not None:payload['price']=price
         if reference:payload['reference']=reference
         if reference_owner_supplied:payload['reference_owner_supplied']=True
+        if staging:payload['staging']=staging
+        if store_scene_id:payload['store_scene_id']=store_scene_id
         with self.store.db() as db:
             _,old=self.replay(db,request_id,payload)
             if old:return old
@@ -214,6 +221,8 @@ class AgentService:
             if template:brief['template']=template
             if price_mode is not None:brief['price_mode']=price_mode
             if reference_owner_supplied:brief['reference_owner_supplied']=True
+            if staging:brief['staging']=staging
+            if store_scene_id:brief['store_scene_id']=store_scene_id
             status='queued' if generate_visual else 'review'
             db.execute('INSERT INTO conversations VALUES(?,?,?)',(cid,('Article · ' if kind=='blog' else 'Grok · ')+checked['title'][:60],now()))
             db.execute("INSERT INTO messages(id,conversation_id,role,body,status,created) VALUES(?,?,'user',?,'done',?)",(message_id,cid,checked['title'],now()))
@@ -370,6 +379,47 @@ class AgentService:
         notes=[n for n in checked.get('editorial_notes',[]) if not n.startswith('Qualité : ')]
         checked['editorial_notes']=notes+quality_notes(quality)
         return quality
+    def add_store_photo(self,request_id,label,description='',tags=None,image_base64=None,image_url=None):
+        from scenes import add_scene
+        if bool(image_base64)==bool(image_url):raise Conflict('Fournissez la photo du lieu en base64 OU via une URL HTTPS.')
+        if image_base64:
+            if not isinstance(image_base64,str) or len(image_base64)>((12*1024*1024+2)//3)*4:raise Conflict('Photo trop volumineuse : 12 Mo maximum.')
+            try:raw=base64.b64decode(image_base64,validate=True)
+            except (ValueError,binascii.Error):raise Conflict('Photo base64 invalide.') from None
+        else:
+            if not isinstance(image_url,str) or urlsplit(image_url).scheme!='https' or not urlsplit(image_url).hostname or urlsplit(image_url).username:raise Conflict('L’URL de la photo doit être en HTTPS.')
+            from net import public_bytes
+            try:raw=public_bytes(image_url,12*1024*1024)
+            except Exception:raise Conflict('Photo du lieu inaccessible à cette adresse.') from None
+        payload={'operation':'add_store_photo','label':label,'sha256':hashlib.sha256(raw).hexdigest()}
+        with self.store.db() as db:
+            fingerprint,old=self.replay(db,request_id,payload)
+            if old:return old
+        try:scene=add_scene(self.store,raw,label,description or '',tags or [],'grok-agent')
+        except ValueError as exc:raise Conflict(str(exc)) from None
+        result={k:scene[k] for k in ('id','label','description','tags','active')}
+        if scene.get('duplicate'):result['duplicate']=True
+        with self.store.db() as db:self.remember(db,request_id,fingerprint,result)
+        return result
+    def update_store_scene(self,request_id,scene_id,label=None,description=None,tags=None,active=None):
+        from scenes import update_scene
+        data={k:v for k,v in (('label',label),('description',description),('tags',tags),('active',active)) if v is not None}
+        payload={'operation':'update_store_scene','scene_id':scene_id,**data}
+        with self.store.db() as db:
+            fingerprint,old=self.replay(db,request_id,payload)
+            if old:return old
+        scene=update_scene(self.store,scene_id,data,'grok-agent')
+        result={k:scene[k] for k in ('id','label','description','tags','active')}
+        with self.store.db() as db:self.remember(db,request_id,fingerprint,result)
+        return result
+    def store_scenes(self):
+        from scenes import list_scenes, STAGINGS
+        return {'scenes':[{k:s[k] for k in ('id','label','description','tags','active','recent_uses','last_used')} for s in list_scenes(self.store)],
+                'stagings':STAGINGS,'recent_visuals':self.recent_visuals()}
+    def recent_visuals(self):
+        with self.store.db() as db:
+            rows=[json.loads(r[0]) for r in db.execute('SELECT body FROM visual_directions ORDER BY rowid DESC LIMIT 8')]
+        return [{k:d.get(k) for k in ('staging','store_scene_label','setting','lighting','angle','created_at')} for d in rows]
     def check_quality(self,fields):
         if not isinstance(fields,dict):raise Conflict('Indiquez les champs facebook, instagram et title.')
         content={k:fields.get(k) if isinstance(fields.get(k),str) else '' for k in ('title','facebook','instagram')}
@@ -437,10 +487,11 @@ class AgentService:
             'pending_requests':pending_requests,'public_articles':public_articles,
             'editorial_rules':rules,'visual_templates':list(VISUAL_TEMPLATES),
             'writing_guide':SOCIAL_GUIDE,'recent_openers':self.recent_openers(),
+            **self.store_scenes(),
             'review_home':os.environ['PUBLIC_URL'].rstrip('/')+'/editorial/',
             'weekly_scheduler':'Vendredi 09:00 Europe/Paris : plan de la semaine suivante, modifiable et validable via approve_week_plan.'
         }
-    def prepare(self,request_id,brief,kind,product_query='',scheduled_at=None,price=None,reference_image_url=None,reference_source_url=None,create_blog=False,schedule_deadline=None,visual_instructions=None,price_mode=None,reference_owner_supplied=False):
+    def prepare(self,request_id,brief,kind,product_query='',scheduled_at=None,price=None,reference_image_url=None,reference_source_url=None,create_blog=False,schedule_deadline=None,visual_instructions=None,price_mode=None,reference_owner_supplied=False,staging=None,store_scene_id=None):
         text=bounded_text(brief,None if kind=='blog' else 6000);query=bounded_text(product_query,600)
         visual=bounded_text(visual_instructions,6000) if visual_instructions is not None else ''
         if not text or kind not in ('social','blog'):raise Conflict('Un brief et un type social ou blog sont requis.')
@@ -454,7 +505,11 @@ class AgentService:
             if not query:raise Conflict('Indiquez le produit exact représenté sur la photo.')
             reference={'url':reference_image_url,'source_url':reference_source_url}
         if type(reference_owner_supplied) is not bool or (reference_owner_supplied and not reference):raise Conflict('La photo du propriétaire exige une référence fournie explicitement.')
+        from scenes import checked_staging
+        staging,store_scene_id=checked_staging(self.store,staging,store_scene_id)
         payload={'operation':'prepare','brief':text,'kind':kind,'query':query,'scheduled_at':scheduled_at,'price':price,'reference':reference}
+        if staging:payload['staging']=staging
+        if store_scene_id:payload['store_scene_id']=store_scene_id
         if create_blog:payload['create_blog']=True
         if schedule_deadline:payload['schedule_deadline']=schedule_deadline
         if visual:payload['visual_instructions']=visual
@@ -477,6 +532,8 @@ class AgentService:
             if visual:data['visual_instructions']=visual
             if price_mode is not None:data['price_mode']=price_mode
             if reference_owner_supplied:data['reference_owner_supplied']=True
+            if staging:data['staging']=staging
+            if store_scene_id:data['store_scene_id']=store_scene_id
             db.execute('INSERT INTO conversations VALUES(?,?,?)',(cid,('Article · ' if kind=='blog' else 'Grok · ')+text[:60],now()))
             db.execute("INSERT INTO messages(id,conversation_id,role,body,status,created) VALUES(?,?,'user',?,'done',?)",(message_id,cid,text,now()))
             db.execute("INSERT INTO items(id,week_id,kind,slot,status,scheduled_at) VALUES(?,?,?,0,'queued',?)",(item_id,'demand:'+cid,kind,due))
@@ -762,7 +819,8 @@ class AgentService:
 
     def _apply_visual_update(self,db,item_id,revision,actor,*,visual_instructions=None,template=None,product_query=None,
                              price_mode=None,price=None,reference_image_url=None,reference_source_url=None,
-                             reference_owner_supplied=False,carousel_slides=None,recomposite_only=False,visual_feedback=None):
+                             reference_owner_supplied=False,carousel_slides=None,recomposite_only=False,visual_feedback=None,
+                             staging=None,store_scene_id=None):
         from generation import validate_content
         from media import recomposite_item_media
         if template is not None and template not in VISUAL_TEMPLATES:
@@ -789,6 +847,16 @@ class AgentService:
             content['visual_instructions']=bounded_text(visual_instructions,6000)
         if visual_feedback is not None:
             content['_visual_feedback']=bounded_text(visual_feedback,2000)
+        staging_changed=False
+        if staging is not None or store_scene_id is not None:
+            from scenes import checked_staging
+            wanted=staging if staging is not None else content.get('staging')
+            scene=store_scene_id if store_scene_id is not None else (None if wanted=='lifestyle' else content.get('store_scene_id'))
+            wanted,scene=checked_staging(self.store,wanted,scene,db)
+            for key,value in (('staging',wanted),('store_scene_id',scene)):
+                if value:content[key]=value
+                else:content.pop(key,None)
+            staging_changed=True
         demand=db.execute('SELECT conversation_id,brief,product FROM demand_items WHERE item_id=?',(item_id,)).fetchone()
         product_changed=False
         if demand:
@@ -821,7 +889,7 @@ class AgentService:
 
         self.store.snapshot(db,item)
         new_rev=revision+1
-        can_recomposite=bool(recomposite_only and not product_changed and not visual_feedback)
+        can_recomposite=bool(recomposite_only and not product_changed and not visual_feedback and not staging_changed)
         if can_recomposite:
             product=None
             if demand and demand['product']:product=json.loads(demand['product'])
@@ -844,9 +912,9 @@ class AgentService:
 
     def generate_visual(self,request_id,item_id,revision,visual_instructions=None,template=None,product_query=None,
                         price_mode=None,price=None,reference_image_url=None,reference_source_url=None,
-                        reference_owner_supplied=False,carousel_slides=None,recomposite_only=False):
+                        reference_owner_supplied=False,carousel_slides=None,recomposite_only=False,staging=None,store_scene_id=None):
         payload={
-            'operation':'generate_visual','item_id':item_id,'revision':revision,
+            'operation':'generate_visual','item_id':item_id,'revision':revision,'staging':staging,'store_scene_id':store_scene_id,
             'visual_instructions':visual_instructions,'template':template,'product_query':product_query,
             'price_mode':price_mode,'price':price,'reference_image_url':reference_image_url,
             'reference_source_url':reference_source_url,'reference_owner_supplied':reference_owner_supplied,
@@ -861,6 +929,7 @@ class AgentService:
                 price_mode=price_mode,price=price,reference_image_url=reference_image_url,
                 reference_source_url=reference_source_url,reference_owner_supplied=reference_owner_supplied,
                 carousel_slides=carousel_slides,recomposite_only=recomposite_only,
+                staging=staging,store_scene_id=store_scene_id,
             )
             self.remember(db,request_id,fingerprint,result)
             return result
@@ -874,6 +943,7 @@ class AgentService:
                 template=data.get('template'),
                 carousel_slides=data.get('carousel_slides'),
                 recomposite_only=bool(data.get('recomposite_only',False)),
+                staging=data.get('staging'),store_scene_id=data.get('store_scene_id'),
             )
 
     def upload_image_from_owner(self,item_id,revision,purpose,raw_bytes,filename='image',actor='owner'):
@@ -1023,9 +1093,9 @@ def build_mcp(service):
         """Issue a 10-minute, single-use upload token scoped to one draft and revision. POST raw image bytes to the returned HTTPS upload_url, with the token in X-Editorial-Upload-Token (never the URL). Max 8 MiB; reference accepts PNG/JPEG/WebP, final requires PNG. A successful POST attaches it; failure or expired/used tokens require a new token. Use only when you can access the actual local file and make the POST yourself. Never claim upload success until the POST confirms it."""
         return service.create_media_upload(item_id,revision,purpose)
     @mcp.tool(annotations=write)
-    def create_direct_draft(request_id:str,kind:Literal['social','blog'],fields:dict,product_query:str='',scheduled_at:str|None=None,create_blog:bool=False,generate_visual:bool=False,visual_instructions:str|None=None,template:Literal['classic','minimal','raw','tip_card']|None=None,price_mode:Literal['hide','catalogue']|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,reference_owner_supplied:bool=False)->dict:
+    def create_direct_draft(request_id:str,kind:Literal['social','blog'],fields:dict,product_query:str='',scheduled_at:str|None=None,create_blog:bool=False,generate_visual:bool=False,visual_instructions:str|None=None,template:Literal['classic','minimal','raw','tip_card']|None=None,price_mode:Literal['hide','catalogue']|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,reference_owner_supplied:bool=False,staging:Literal['auto','store','in_use','lifestyle','detail']|None=None,store_scene_id:str|None=None)->dict:
         """Create ONE studio draft directly from your finished text, without Codex rewriting. Social captions go through the quality gate: identical Facebook/Instagram texts, URLs in Instagram or spec-sheet captions are refused with the fixes to make (call check_post_quality first). fields may include title, headline, facebook, instagram, markdown, excerpt, slug, category, alt, sources, seo_title, seo_description, tags, template, carousel_slides. Pass generate_visual=true (with optional visual_instructions, template, price_mode, reference_image_url) to also generate the visual right away, or attach/import one afterward. Reuse request_id for a retry."""
-        return service.create_direct(request_id,kind,fields,product_query,scheduled_at,create_blog,generate_visual,visual_instructions,template,price_mode,price,reference_image_url,reference_source_url,reference_owner_supplied)
+        return service.create_direct(request_id,kind,fields,product_query,scheduled_at,create_blog,generate_visual,visual_instructions,template,price_mode,price,reference_image_url,reference_source_url,reference_owner_supplied,staging,store_scene_id)
     @mcp.tool(annotations=read)
     def check_post_quality(fields:dict)->dict:
         """Check Facebook + Instagram captions before create_direct_draft or edit_content. fields: title, facebook, instagram. Returns score (aim for 100), blocking issues (the draft would be refused), warnings (shown to the owner at review) and the writing guide. Never creates or changes anything."""
@@ -1044,9 +1114,9 @@ def build_mcp(service):
         """Attach your own finished visual to a social or blog draft without regenerating it. Send PNG bytes as base64, no data-URL prefix, at most 8 MiB decoded. Only use bytes you actually possess. Text and schedule are preserved; approval is invalidated and the result must be shown to the owner. Reuse request_id on retry."""
         return service.import_final_visual(request_id,item_id,revision,image_base64)
     @mcp.tool(annotations=write)
-    def prepare_content(request_id:str,brief:str,kind:Literal['social','blog'],product_query:str='',scheduled_at:str|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,create_blog:bool=False,visual_instructions:str|None=None,price_mode:Literal['hide','catalogue']|None=None,reference_owner_supplied:bool=False)->dict:
+    def prepare_content(request_id:str,brief:str,kind:Literal['social','blog'],product_query:str='',scheduled_at:str|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,create_blog:bool=False,visual_instructions:str|None=None,price_mode:Literal['hide','catalogue']|None=None,reference_owner_supplied:bool=False,staging:Literal['auto','store','in_use','lifestyle','detail']|None=None,store_scene_id:str|None=None)->dict:
         """Queue ONE additional social subject (FB+IG) or blog article for Codex. Owner approval of the finished preview is mandatory and may be relayed via approve_content. Use a unique request_id, reuse it on network retry. Brief includes verified facts/sources and exact product query. visual_instructions optionally provides detailed scene, composition and visual direction; it is passed to image generation. To use the current verified store price, pass price_mode='catalogue' with an exact product query; pass price for an explicitly confirmed custom amount, or omit both to hide price. Optional reference must depict the exact model/finish with its real source page. Set reference_owner_supplied=true only if the owner explicitly supplied this exact reference as their own photo, never merely to bypass a supplier restriction. Date includes timezone; social spacing is automatic. create_blog requests a companion article published immediately after drafting once the owner approves the social preview. Weekly plan is untouched."""
-        return service.prepare(request_id,brief,kind,product_query,scheduled_at,price,reference_image_url,reference_source_url,create_blog,visual_instructions=visual_instructions,price_mode=price_mode,reference_owner_supplied=reference_owner_supplied)
+        return service.prepare(request_id,brief,kind,product_query,scheduled_at,price,reference_image_url,reference_source_url,create_blog,visual_instructions=visual_instructions,price_mode=price_mode,reference_owner_supplied=reference_owner_supplied,staging=staging,store_scene_id=store_scene_id)
     @mcp.tool(annotations=write)
     def schedule_content(request_id:str,item_id:str,revision:int,scheduled_at:str|None=None,create_blog:bool|None=None)->dict:
         """Set a ready unapproved draft's date and/or companion article option without regenerating content. Social slots are spaced at least 2h. Read current revision. This invalidates the previous preview: show get_content and get_visual again and obtain fresh owner consent."""
@@ -1060,9 +1130,21 @@ def build_mcp(service):
         """Ask the studio to revise ONE existing unapproved draft. scope='text' rewrites only text and keeps/recomposites media; scope='visual' regenerates only the image while preserving exact text; scope='both' redoes both. Optional template sets the visual layout. Does not approve."""
         return service.revise(request_id,item_id,revision,instruction,scope,template)
     @mcp.tool(annotations=write)
-    def generate_visual(request_id:str,item_id:str,revision:int,visual_instructions:str|None=None,template:Literal['classic','minimal','raw','tip_card']|None=None,product_query:str|None=None,price_mode:Literal['hide','catalogue']|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,reference_owner_supplied:bool=False,carousel_slides:list[dict]|None=None,recomposite_only:bool=False)->dict:
-        """Generate, regenerate or instantly recomposite ONLY the visual (or 2-5 slide carousel) of an existing draft while preserving all texts. Pass recomposite_only=true to switch template or carousel_slides instantly from the existing scene without calling image generation. Reuse request_id on retry."""
-        return service.generate_visual(request_id,item_id,revision,visual_instructions,template,product_query,price_mode,price,reference_image_url,reference_source_url,reference_owner_supplied,carousel_slides,recomposite_only)
+    def generate_visual(request_id:str,item_id:str,revision:int,visual_instructions:str|None=None,template:Literal['classic','minimal','raw','tip_card']|None=None,product_query:str|None=None,price_mode:Literal['hide','catalogue']|None=None,price:float|None=None,reference_image_url:str|None=None,reference_source_url:str|None=None,reference_owner_supplied:bool=False,carousel_slides:list[dict]|None=None,recomposite_only:bool=False,staging:Literal['auto','store','in_use','lifestyle','detail']|None=None,store_scene_id:str|None=None)->dict:
+        """Generate, regenerate or instantly recomposite ONLY the visual (or 2-5 slide carousel) of an existing draft while preserving all texts. Pass recomposite_only=true to switch template or carousel_slides instantly from the existing scene without calling image generation. staging chooses how the product is shown (store = in a real shop location from list_store_scenes, in_use = someone playing it, lifestyle = at a musician's place, detail = close-up, auto = studio rotation); store_scene_id picks the shop photo. Omit both to let the studio rotate them. Reuse request_id on retry."""
+        return service.generate_visual(request_id,item_id,revision,visual_instructions,template,product_query,price_mode,price,reference_image_url,reference_source_url,reference_owner_supplied,carousel_slides,recomposite_only,staging,store_scene_id)
+    @mcp.tool(annotations=read)
+    def list_store_scenes()->dict:
+        """List the shop photos (locations) used as real backgrounds for visuals, how often each was used recently, the staging options and the last visual directions. Use it to avoid repeating the same place or staging."""
+        return service.store_scenes()
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=False,idempotentHint=True,openWorldHint=True))
+    def add_store_photo(request_id:str,label:str,description:str='',tags:list[str]|None=None,image_base64:str|None=None,image_url:str|None=None)->dict:
+        """Save ONE photo of a place in the Planète Laser shop (sofas, guitar wall, drum corner, stage, counter…) to the location library. label: short name; description: what is visible and what can be placed there; tags: which products suit it (guitares, basses, claviers, batterie, sono, dj, lumière, micros, accessoires, tous). Send the actual bytes as base64 (no data-URL prefix, 12 MiB max) or an HTTPS image_url. Avoid photos where customers or staff are recognisable. Never claim success unless the call succeeded. Reuse request_id on retry."""
+        return service.add_store_photo(request_id,label,description,tags,image_base64,image_url)
+    @mcp.tool(annotations=write)
+    def update_store_scene(request_id:str,scene_id:str,label:str|None=None,description:str|None=None,tags:list[str]|None=None,active:bool|None=None)->dict:
+        """Rename, describe, retag or pause (active=false) / reactivate a shop location. Paused locations are never used for new visuals."""
+        return service.update_store_scene(request_id,scene_id,label,description,tags,active)
     @mcp.tool(annotations=read)
     def search_catalogue(query:str='',category:str='',in_stock_only:bool=False,min_price:float|None=None,max_price:float|None=None,limit:int=15)->dict:
         """Search the live Planète Laser catalogue (real titles, EANs, EUR TTC prices, stock availability, URLs and thumbnails)."""

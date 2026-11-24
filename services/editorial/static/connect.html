@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Règles &amp; Grok Bot · Planète Laser</title>
-    <script src="/editorial/static/embed.js?v=v2-3"></script>
-    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-3" />
-    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-3" />
-    <link rel="stylesheet" href="/editorial/static/connect.css?v=v2-3" />
-    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-3" />
-    <script src="/editorial/static/connect.js?v=v2-3" defer></script>
+    <script src="/editorial/static/embed.js?v=v2-4"></script>
+    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-4" />
+    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-4" />
+    <link rel="stylesheet" href="/editorial/static/connect.css?v=v2-4" />
+    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-4" />
+    <script src="/editorial/static/connect.js?v=v2-4" defer></script>
   </head>
   <body>
     <main class="connect-page connect-v2">
@@ -39,6 +39,7 @@
           <label for="rules-default-template">
             Gabarit visuel par défaut
             <select id="rules-default-template">
+              <option value="auto">Varier automatiquement (recommandé)</option>
               <option value="classic">Classique (logo + bandeau)</option>
               <option value="minimal">Plein cadre épuré</option>
               <option value="raw">Photo brute (sans cadre)</option>
@@ -64,14 +65,26 @@
         </div>
       </section>
 
+      <section class="connect-card" aria-labelledby="scenes-heading">
+        <div class="scenes-heading">
+          <div>
+            <h2 id="scenes-heading">2. Photos du magasin</h2>
+            <p class="hint">Les visuels placent les instruments dans ces vrais lieux (canapés, murs, coin batterie, scène…), avec ou sans musicien, en changeant de lieu et de mise en scène d’un post à l’autre. Évitez les photos où des clients sont reconnaissables.</p>
+          </div>
+          <label class="button primary scenes-upload">Ajouter des photos<input id="scene-files" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden /></label>
+        </div>
+        <p id="scenes-status" class="hint" role="status"></p>
+        <div id="scenes-list" class="scenes-grid"></div>
+      </section>
+
       <section class="connect-card" aria-labelledby="activity-heading">
-        <h2 id="activity-heading">2. Activité récente</h2>
+        <h2 id="activity-heading">3. Activité récente</h2>
         <div id="activity-stats" class="pill-row"></div>
         <div id="activity-list" class="connect-activity-list" aria-live="polite"></div>
       </section>
 
       <section class="connect-card" aria-labelledby="mcp-heading">
-        <h2 id="mcp-heading">3. Connexion MCP &amp; Clés d’accès</h2>
+        <h2 id="mcp-heading">4. Connexion MCP &amp; Clés d’accès</h2>
         <p>
           Dans Grok Bot, ajoutez un serveur MCP personnalisé distant (HTTPS), nommé
           <strong>Planète Laser Studio</strong>.

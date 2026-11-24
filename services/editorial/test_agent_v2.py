@@ -140,7 +140,7 @@ def test_catalogue_search_contents_published_and_rules(service, monkeypatch):
 
     found = service.search_contents(query='micro', filter='published')
     assert found['total'] == 1 and found['items'][0]['id'] == blog_id
-    assert service.get_editorial_rules()['default_template'] == 'minimal'
+    assert service.get_editorial_rules()['default_template'] == 'auto'  # varied frames by default
 
 
 def test_week_plan_full_autonomy_lifecycle(service):

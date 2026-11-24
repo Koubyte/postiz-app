@@ -389,6 +389,36 @@ async def item_visual(id:str,request:Request):
     result=agent_service.visual_from_owner(id,data['revision'],data,who)
     return {'ok':True,'result':result,'item':content_detail(store,id)}
 
+# Shop photos: real locations the studio stages products in.
+@app.get('/editorial/api/store-scenes')
+async def store_scenes_api(request:Request):
+    await actor(request)
+    from scenes import list_scenes, STAGINGS
+    return {'scenes':list_scenes(store),'stagings':STAGINGS}
+
+@app.post('/editorial/api/store-scenes')
+async def add_store_scene_api(request:Request):
+    who=await actor(request)
+    data=await binary_body(request,16*1024*1024)
+    from urllib.parse import unquote
+    from scenes import add_scene
+    name=unquote(request.headers.get('x-file-name','Photo du magasin'))
+    label=re.sub(r'\.[A-Za-z0-9]{2,5}$','',name).replace('_',' ').replace('-',' ').strip()[:80] or 'Photo du magasin'
+    try:return await asyncio.to_thread(add_scene,store,data,label,'',[],who)
+    except MediaBlocked as exc:raise Conflict(str(exc))
+
+@app.post('/editorial/api/store-scenes/{id}')
+async def update_store_scene_api(id:str,request:Request):
+    who=await actor(request);data=await body(request)
+    from scenes import update_scene
+    return update_scene(store,id,data,who)
+
+@app.post('/editorial/api/store-scenes/{id}/delete')
+async def delete_store_scene_api(id:str,request:Request):
+    who=await actor(request);await body(request)
+    from scenes import delete_scene
+    return delete_scene(store,id,who)
+
 @app.post('/editorial/api/items/{id}/upload-image')
 async def item_upload_image(id:str,request:Request):
     who=await actor(request)
