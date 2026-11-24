@@ -33,6 +33,7 @@ function applyRulesToForm(rules) {
   if (byId('rules-weekly-blog-link')) byId('rules-weekly-blog-link').checked = Boolean(rules.weekly_blog_link);
 }
 
+const weekStatusLabels = {preparing:'plan en préparation',plan_review:'plan à valider',revising:'sujet en modification',generating:'contenus en création',review:'contenus à relire',failed:'à reprendre'};
 async function refreshActivity() {
   const statsBox = byId('activity-stats');
   const listBox = byId('activity-list');
@@ -42,9 +43,9 @@ async function refreshActivity() {
     const stats = data.stats || {};
     statsBox.replaceChildren(
       ...[['À relire : ' + (stats.review ?? 0), stats.review > 0 ? 'warn' : ''],
-          ['Programmés : ' + (stats.queued ?? 0), ''],
+          ['En préparation : ' + (stats.queued ?? 0), ''],
           ['Publiés : ' + (stats.published ?? 0), 'ok'],
-          ['Semaine : ' + (stats.week_status || 'aucune'), 'accent']].map(([text, cls]) => {
+          ['Semaine : ' + (weekStatusLabels[stats.week_status] || stats.week_status || 'aucune'), 'accent']].map(([text, cls]) => {
         const pill = document.createElement('span');
         pill.className = 'v2-pill' + (cls ? ' ' + cls : '');
         pill.textContent = text;

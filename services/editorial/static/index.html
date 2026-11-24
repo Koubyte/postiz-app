@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#030303" />
     <title>Studio éditorial · Planète Laser</title>
-    <script src="/editorial/static/embed.js?v=v2-1"></script>
-    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-1" />
-    <link rel="stylesheet" href="/editorial/static/contents.css?v=v2-1" />
-    <link rel="stylesheet" href="/editorial/static/review.css?v=v2-1" />
-    <link rel="stylesheet" href="/editorial/static/strategy.css?v=v2-1" />
-    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-1" />
-    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-1" />
-    <script src="/editorial/static/review-studio.js?v=v2-1" defer></script>
-    <script src="/editorial/static/app.js?v=v2-1" defer></script>
-    <script src="/editorial/static/chat.js?v=v2-1" defer></script>
-    <script src="/editorial/static/contents.js?v=v2-1" defer></script>
-    <script src="/editorial/static/strategy.js?v=v2-1" defer></script>
+    <script src="/editorial/static/embed.js?v=v2-2"></script>
+    <link rel="stylesheet" href="/editorial/static/style.css?v=v2-2" />
+    <link rel="stylesheet" href="/editorial/static/contents.css?v=v2-2" />
+    <link rel="stylesheet" href="/editorial/static/review.css?v=v2-2" />
+    <link rel="stylesheet" href="/editorial/static/strategy.css?v=v2-2" />
+    <link rel="stylesheet" href="/editorial/static/embed.css?v=v2-2" />
+    <link rel="stylesheet" href="/editorial/static/studio-v2.css?v=v2-2" />
+    <script src="/editorial/static/review-studio.js?v=v2-2" defer></script>
+    <script src="/editorial/static/app.js?v=v2-2" defer></script>
+    <script src="/editorial/static/chat.js?v=v2-2" defer></script>
+    <script src="/editorial/static/contents.js?v=v2-2" defer></script>
+    <script src="/editorial/static/strategy.js?v=v2-2" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">Aller au contenu</a>
@@ -46,6 +46,8 @@
       <div class="studio-menu-history">
         <label for="chat-history">Vos discussions</label><select id="chat-history" aria-label="Choisir une discussion"></select>
         <button type="button" class="button secondary" id="chat-new">Nouvelle discussion</button>
+        <input id="chat-history-search" class="chat-thread-search" type="search" placeholder="Rechercher une discussion…" aria-label="Rechercher une discussion" autocomplete="off" maxlength="120" />
+        <div id="chat-history-list" class="chat-thread-list" aria-label="Vos discussions"></div>
       </div>
       <a href="/editorial/connect">Connecter Grok Bot</a>
       <details class="studio-menu-settings"><summary>Réglages du studio</summary><button id="pause" class="button secondary" disabled>Suspendre</button></details>
@@ -124,8 +126,9 @@
         <section id="chat-panel" hidden aria-label="Discussion avec le Studio IA">
           <div class="chat-shell">
             <aside id="chat-sidebar" class="chat-sidebar" aria-label="Discussions">
-              <button type="button" class="button primary" id="chat-sidebar-new">+ Nouvelle discussion</button>
-              <div id="chat-sidebar-list" class="chat-sidebar-list"></div>
+              <button type="button" class="button primary chat-sidebar-new" id="chat-sidebar-new"><img src="/editorial/static/assets/icons/plus.svg" alt="" />Nouvelle discussion</button>
+              <input id="chat-sidebar-search" class="chat-thread-search" type="search" placeholder="Rechercher une discussion…" aria-label="Rechercher une discussion" autocomplete="off" maxlength="120" />
+              <div id="chat-sidebar-list" class="chat-thread-list" aria-label="Vos discussions"></div>
             </aside>
             <div class="chat-main">
               <div id="chat-messages" role="log" aria-label="Discussion avec l’IA" aria-live="polite"></div>
@@ -147,15 +150,17 @@
           </div>
         </section>
         <div id="weekly-panel">
-        <div class="weekly-actions"><button class="button secondary" id="request-open">Mettre un produit en avant</button><a class="button secondary" href="/editorial/connect">Règles &amp; Grok Bot</a><button class="button primary" id="prepare" disabled>Préparer la prochaine semaine</button></div>
-        <div class="section-heading">
+        <div class="section-heading weekly-heading">
           <div>
             <p class="eyebrow">LE CALENDRIER</p>
             <h2>Le programme de la semaine</h2>
           </div>
-          <label class="week-picker"
-            >Semaine<select id="weeks" aria-label="Choisir une semaine"></select
-          ></label>
+          <div class="weekly-tools">
+            <label class="week-picker"
+              >Semaine<select id="weeks" aria-label="Choisir une semaine"></select
+            ></label>
+            <div class="weekly-actions"><a class="button ghost" href="/editorial/connect">Règles &amp; Grok Bot</a><button class="button secondary" id="request-open">Mettre un produit en avant</button><button class="button primary" id="prepare" disabled>Préparer la prochaine semaine</button></div>
+          </div>
         </div>
         <div id="stats" class="stats"></div>
         <div id="week-content">

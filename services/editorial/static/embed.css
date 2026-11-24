@@ -130,7 +130,8 @@
 .postiz-embedded .markdown-preview a { color: #612bd3; }
 .postiz-embedded .markdown-preview blockquote { border-left-color: #612bd3; background: #eeeaf7; }
 .postiz-embedded .connect-page { padding-top: 24px; max-width: 780px; }
-.postiz-embedded .connect-page > a:first-child { display: none; }
+.postiz-embedded .connect-page > a:first-child,
+.postiz-embedded .connect-top > a:first-child { display: none; }
 .postiz-embedded .connect-page h1 { margin-top: 0; font-size: 24px; }
 .postiz-embedded .connect-page section { border-color: var(--line); }
 .postiz-embedded[data-theme="light"] .studio-icon img,

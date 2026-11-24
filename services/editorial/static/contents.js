@@ -48,16 +48,18 @@ $('contents-filter-select').onchange=e=>setContentFilter(e.target.value);
 function contentRow(item) {
   const row=el('article',{class:'content-row','data-item-id':item.id});
   const url=safeUrl(item.kind==='blog'?item.blog_media_url||item.media_url:item.media_url||item.blog_media_url);
-  const thumbnail=url?el('img',{src:url,alt:'',loading:'lazy',width:88,height:100}):el('div',{class:'content-no-image'},item.kind==='blog'?'Article':'Visuel à créer');
+  const thumbnail=url?el('img',{src:url,alt:'',loading:'lazy',width:72,height:72}):el('div',{class:'content-no-image'},item.kind==='blog'?'Article':'Visuel à créer');
   row.append(el('div',{class:'content-thumbnail'},thumbnail));
-  const body=el('div',{class:'content-row-body'},el('p',{class:'content-origin'},`${sourceLabels[item.source]||'Studio'} · ${item.kind==='blog'?'Blog':'Facebook + Instagram'}`));
+  const body=el('div',{class:'content-row-body'});
   const title=el('button',{class:'content-title',type:'button'},item.title||'Contenu en préparation');
   title.onclick=()=>openContent(item.id,title);
   body.append(el('h2',{},title));
-  body.append(el('p',{class:'content-when'},item.status==='managed'?'Date et contenu à consulter dans Postiz':dateLabel(item.scheduled_at)));
   const templatePill=item.kind==='social'&&item.template&&item.template!=='classic'?el('span',{class:'v2-pill'},templateLabels[item.template]||item.template):null;
   const carouselPill=item.slide_count>=2?el('span',{class:'v2-pill accent'},`Carrousel · ${item.slide_count} pages`):null;
-  body.append(el('div',{class:'content-row-status'},badge(item.status),item.overdue?el('span',{class:'badge blocked'},'Date à revoir'):null,templatePill,carouselPill));
+  const when=item.status==='managed'?'Date et contenu à consulter dans Postiz':dateLabel(item.scheduled_at);
+  body.append(el('div',{class:'content-row-status'},badge(item.status),item.overdue?el('span',{class:'badge blocked'},'Date à revoir'):null,templatePill,carouselPill,
+    el('span',{class:'content-when'},when),
+    el('span',{class:'content-origin'},`${sourceLabels[item.source]||'Studio'} · ${item.kind==='blog'?'Blog':'Facebook + Instagram'}`)));
   if(item.warning || item.error)body.append(el('p',{class:'content-issue'},item.error||item.warning));
   const actions=el('div',{class:'content-row-actions'});
   let actionLabel='Voir le contenu';
@@ -68,7 +70,7 @@ function contentRow(item) {
   review.onclick=()=>openContent(item.id,review);
   actions.append(review);
   if(['review','rejected','blocked','failed','draft'].includes(item.status)) {
-    const del=el('button',{class:'button danger',type:'button'},'Supprimer');
+    const del=el('button',{class:'button content-delete',type:'button'},'Supprimer');
     let armTimer=null;
     del.onclick=async()=>{
       if(!del.dataset.armed) {
@@ -101,7 +103,7 @@ function contentRow(item) {
     week.onclick=()=>{if(state.data?.weeks.some(w=>w.id===item.week_id)){state.weekId=item.week_id;render();}};
     actions.append(week);
   }
-  body.append(actions);row.append(body);return row;
+  row.append(body,actions);return row;
 }
 async function openContent(id,button) {
   button.disabled=true;

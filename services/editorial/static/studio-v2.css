@@ -52,13 +52,39 @@
 }
 
 /* ---------- Weekly View v2 ---------- */
+.weekly-heading {
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+.weekly-tools {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.weekly-tools .week-picker select {
+  min-width: 210px;
+}
 .weekly-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 8px;
   flex-wrap: wrap;
-  padding: 18px 0;
+  padding: 0;
+}
+.plan-panel > .section-heading {
+  align-items: center;
+}
+.button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.button.ghost:hover {
+  color: var(--text);
+  background: var(--panel2);
 }
 .weekly-actions-group {
   display: flex;
@@ -95,7 +121,12 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+}
+.plan-card-pills .v2-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .plan-day-label {
   font-size: 12px;
@@ -113,30 +144,51 @@
   line-height: 1.55;
   color: var(--muted);
 }
-.plan-card-edit {
+/* Footer pinned to the bottom of every card: "Ajuster" and the AI revision side by side. */
+.plan-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
-  padding-top: 10px;
+}
+.plan-card-footer > .button {
+  min-height: 36px;
+  padding: 7px 14px;
+  font-size: 12px;
+}
+.plan-card-edit[open] {
+  flex-basis: 100%;
 }
 .plan-card-edit summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: var(--studio-accent);
-  padding: 4px 0;
+  color: var(--text);
+  list-style: none;
+}
+.plan-card-edit summary::-webkit-details-marker {
+  display: none;
+}
+.plan-card-edit summary:hover {
+  background: var(--panel2);
 }
 .plan-card-edit[open] summary {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  border-color: color-mix(in srgb, var(--studio-accent) 45%, var(--line));
 }
 .plan-card-edit label {
   margin-bottom: 10px;
 }
-.plan-card-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 6px;
-  flex-wrap: wrap;
-}
+
 .plan-actions {
   position: sticky;
   bottom: 0;
@@ -247,25 +299,32 @@
   color: var(--text);
 }
 .contents-list.is-grid {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
 }
 .contents-list.is-grid .content-row {
+  display: flex;
   flex-direction: column;
-  padding: 14px;
-  gap: 12px;
+  align-items: stretch;
+  padding: 12px;
+  gap: 10px;
 }
-.contents-list.is-grid .content-thumbnail {
+.contents-list.is-grid .content-thumbnail,
+.contents-list.is-grid .content-no-image {
   width: 100%;
-  flex: none;
 }
-.contents-list.is-grid .content-thumbnail img {
+.contents-list.is-grid .content-thumbnail img,
+.contents-list.is-grid .content-no-image {
   width: 100%;
-  height: 220px;
-  object-fit: cover;
+  height: auto;
+  aspect-ratio: 4 / 5;
+}
+.contents-list.is-grid .content-origin {
+  display: none;
 }
 .contents-list.is-grid .content-row-actions {
-  width: 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   margin-top: auto;
 }
 
@@ -275,11 +334,17 @@
   max-height: 94dvh;
   padding: 22px 26px;
 }
-.review-heading-actions {
+.review-heading-actions,
+#item-dialog .review-heading > .review-heading-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   flex: none;
+  margin-left: auto;
+}
+#item-dialog .review-fields [role="tabpanel"] > label,
+#item-dialog .review-fields [role="tabpanel"] > .form-grid {
+  margin-bottom: 18px;
 }
 .review-queue-nav {
   display: inline-flex;
@@ -687,7 +752,7 @@ textarea.blog-editor.with-toolbar {
   font-size: 11px;
 }
 
-/* ---------- Desktop Chat Sidebar ---------- */
+/* ---------- Discussion: conversation lists ---------- */
 .chat-shell {
   display: flex;
   flex: 1;
@@ -704,50 +769,181 @@ textarea.blog-editor.with-toolbar {
   min-width: 0;
   min-height: 0;
 }
+.chat-thread-search {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+/* Flex column, never a fixed-height grid: rows must keep their own height. */
+.chat-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.chat-thread-group {
+  flex: none;
+  margin: 14px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chat-thread-group:first-child {
+  margin-top: 4px;
+}
+.chat-thread {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.chat-thread:hover {
+  background: var(--panel2);
+}
+.chat-thread[aria-current="true"] {
+  background: var(--studio-accent-soft);
+  border-color: color-mix(in srgb, var(--studio-accent) 45%, var(--line));
+}
+.chat-thread-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.chat-thread-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+.chat-thread-kind {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 600;
+}
+.chat-thread-kind.grok {
+  color: var(--studio-accent);
+  border-color: color-mix(in srgb, var(--studio-accent) 45%, var(--line));
+}
+.chat-thread-empty {
+  margin: 12px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* History menu (phones and narrow windows): the same list as the sidebar. */
+.studio-menu-history select {
+  display: none;
+}
+.studio-menu-history .chat-thread-search {
+  margin-top: 12px;
+}
+.studio-menu-history .chat-thread-list {
+  max-height: min(56dvh, 520px);
+  margin: 6px -8px 0;
+}
+.chat-sidebar-new img {
+  width: 16px;
+  height: 16px;
+  filter: invert(1);
+}
+
 @media (min-width: 960px) {
   .chat-mode main,
   .postiz-embedded .chat-mode main {
-    max-width: 1140px;
+    max-width: none;
   }
   .chat-sidebar {
     display: flex;
     flex-direction: column;
-    width: 260px;
     flex: none;
-    border-right: 1px solid var(--line);
-    padding: 14px 12px;
+    width: 288px;
+    min-height: 0;
     gap: 10px;
-    background: color-mix(in srgb, var(--panel) 80%, var(--bg));
+    padding: 16px 12px 12px;
+    border-right: 1px solid var(--line);
   }
-  .chat-sidebar-list {
+  .chat-sidebar .chat-thread-list {
     flex: 1;
-    overflow-y: auto;
-    display: grid;
-    align-content: start;
-    gap: 4px;
+    margin: 0 -4px;
+    padding: 0 4px;
   }
-  .chat-sidebar-item {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--muted);
-    text-align: left;
-    padding: 9px 10px;
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.35;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* Keep the conversation readable while the scrollbar stays at the edge. */
+  .chat-mode #chat-messages,
+  .postiz-embedded .chat-mode #chat-messages {
+    padding-inline: max(28px, calc((100% - 780px) / 2));
   }
-  .chat-sidebar-item:hover {
+  .chat-mode .chat-composer,
+  .postiz-embedded .chat-mode .chat-composer {
+    padding-inline: max(24px, calc((100% - 780px) / 2));
+  }
+  .chat-mode #notice,
+  .chat-mode #error {
+    margin-inline: 16px;
+  }
+}
+/* Generated post inside the conversation: compact media card on wide screens. */
+@media (min-width: 801px) {
+  .chat-result {
+    max-width: 620px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
     background: var(--panel2);
-    color: var(--text);
   }
-  .chat-sidebar-item[aria-current="true"] {
-    background: var(--studio-accent-soft);
-    border-color: color-mix(in srgb, var(--studio-accent) 45%, var(--line));
-    color: var(--text);
-    font-weight: 600;
+  .chat-result.has-media {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    column-gap: 20px;
+  }
+  .chat-result.has-media > img {
+    grid-row: 1 / span 8;
+    width: 168px;
+    height: 210px;
+    max-height: none;
+    margin: 0;
+    object-fit: cover;
+    border-radius: 10px;
+  }
+  .chat-result.has-media > :not(img) {
+    grid-column: 2;
+  }
+  .chat-result h4 {
+    margin-top: 4px;
+  }
+  .chat-result .chat-review {
+    width: auto;
+    justify-self: start;
+    padding: 0 22px;
+  }
+  .chat-result .chat-edit {
+    width: auto;
+    justify-content: flex-start;
+    justify-self: start;
+    padding: 0 2px;
+  }
+  .chat-result .badge {
+    justify-self: start;
   }
 }
 
@@ -805,6 +1001,26 @@ textarea.blog-editor.with-toolbar {
   }
 }
 @media (max-width: 600px) {
+  .weekly-tools,
+  .weekly-tools .week-picker {
+    width: 100%;
+  }
+  .weekly-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .weekly-actions #prepare {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+  .weekly-actions .button {
+    min-height: 44px;
+    padding: 9px 10px;
+  }
+  .plan-card-footer > .button {
+    flex: 1;
+  }
   .review-queue-nav {
     display: none;
   }

@@ -66,6 +66,9 @@
       if (message.action === 'new') document.getElementById('chat-new')?.click();
       if (message.action === 'history' || message.action === 'settings') {
         const history = message.action === 'history';
+        // The wide chat already lists every discussion beside the conversation.
+        const sidebarSearch = document.getElementById('chat-sidebar-search');
+        if (history && sidebarSearch?.offsetParent) { sidebarSearch.focus(); return; }
         menu.dataset.mode = message.action;
         document.getElementById('studio-menu-title').textContent = history ? 'Vos discussions' : 'Réglages du studio';
         document.getElementById(history ? 'chat-history-open' : 'studio-menu-open')?.click();

@@ -399,7 +399,7 @@ function renderPlan(w) {
     el(
       'p',
       {},
-      'Parcourez les cartes de la semaine et dépliez « Modifier les détails » pour ajuster un titre, un angle ou une date (heure de Paris). Valider le plan lance la création ; aucune publication ne part sans votre accord.',
+      'Ajustez un titre, un angle ou une date (heure de Paris) avec « Ajuster », ou demandez une autre proposition à l’IA. Valider le plan lance la création ; aucune publication ne part sans votre accord.',
     ),
   );
   const plan = structuredClone(w.plan);
@@ -461,10 +461,10 @@ function renderPlan(w) {
       maxlength: 800,
     });
     const dayLabel = el('span', { class: 'plan-day-label' }, dateLabel(subject.scheduled_at));
-    const pills = el(
+    const slotPill = el('span', { class: 'v2-pill accent' }, `${Number(subject.slot) + 1} · ${kinds[subject.kind] || subject.kind}`);
+    const pills = product ? el(
       'div',
-      { class: 'pill-row' },
-      el('span', { class: 'v2-pill accent' }, `${Number(subject.slot) + 1} · ${kinds[subject.kind] || subject.kind}`),
+      { class: 'pill-row plan-card-pills' },
       product
         ? el('span', { class: 'v2-pill' }, product.title.slice(0, 32))
         : null,
@@ -479,13 +479,13 @@ function renderPlan(w) {
                 : 'Sans prix',
           )
         : null,
-    );
+    ) : null;
     const titleHeading = el('h4', { class: 'plan-card-title' }, subject.title || 'Sujet à nommer');
     const angleSummary = el('p', { class: 'plan-card-angle' }, subject.angle || '');
     const details = el(
       'details',
       { class: 'plan-card-edit' },
-      el('summary', {}, 'Modifier les détails'),
+      el('summary', {}, 'Ajuster'),
       title.label,
       angle.label,
       scene.label,
@@ -494,7 +494,8 @@ function renderPlan(w) {
     const card = el(
       'article',
       { class: 'plan-card-v2' },
-      el('div', { class: 'plan-card-head' }, dayLabel, pills),
+      el('div', { class: 'plan-card-head' }, dayLabel, slotPill),
+      pills,
       titleHeading,
       angleSummary,
     );
@@ -521,10 +522,10 @@ function renderPlan(w) {
       markDirty();
     });
     card.append(
-      details,
       el(
         'div',
-        { class: 'plan-card-actions' },
+        { class: 'plan-card-footer' },
+        details,
         el(
           'button',
           {
@@ -558,17 +559,21 @@ function renderPlan(w) {
           'div',
           { class: 'plan-card-head' },
           dayLabel,
-          el('div', { class: 'pill-row' }, el('span', { class: 'v2-pill accent' }, 'BLOG · 1 ARTICLE SEO')),
+          el('span', { class: 'v2-pill accent' }, 'Article de blog'),
         ),
         articleHeading,
         articleAngle,
         el(
-          'details',
-          { class: 'plan-card-edit' },
-          el('summary', {}, 'Modifier les détails'),
-          title.label,
-          angle.label,
-          dateField(a, dayLabel),
+          'div',
+          { class: 'plan-card-footer' },
+          el(
+            'details',
+            { class: 'plan-card-edit' },
+            el('summary', {}, 'Ajuster'),
+            title.label,
+            angle.label,
+            dateField(a, dayLabel),
+          ),
         ),
       ),
     );
