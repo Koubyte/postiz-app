@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
+import { createTextClient, createImageClient } from './text-provider';
 import { shuffle } from 'lodash';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
-});
+const openai = createTextClient();
+const imageClient = createImageClient();
 
 const PicturePrompt = z.object({
   prompt: z.string(),
@@ -79,7 +78,7 @@ Clips must not overlap. Write the title and the post in this language, whatever 
     // gpt-image models always return base64 (b64_json) and do not accept the
     // `response_format` parameter, unlike the deprecated dall-e-3.
     const generate = (
-      await openai.images.generate({
+      await imageClient.images.generate({
         prompt,
         model: 'chatgpt-image-latest',
         size: isVertical ? '1024x1536' : '1024x1024',

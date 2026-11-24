@@ -1,3 +1,4 @@
+import { textAIConfigured } from '@gitroom/nestjs-libraries/openai/text-provider';
 import { OpenaiService } from '@gitroom/nestjs-libraries/openai/openai.service';
 import {
   ExposeVideoFunction,
@@ -41,7 +42,8 @@ async function getAudioDuration(buffer: Buffer): Promise<number> {
 
 class ImagesSlidesParams {
   @JSONSchema({
-    description: 'Elevenlabs voice id, use a special tool to get it, this is a required filed',
+    description:
+      'Elevenlabs voice id, use a special tool to get it, this is a required filed',
   })
   @IsString()
   voice: string;
@@ -56,7 +58,8 @@ class ImagesSlidesParams {
 @Video({
   identifier: 'image-text-slides',
   title: 'Image Text Slides',
-  description: 'Generate videos slides from images and text, Don\'t break down the slides, provide only the first slide information',
+  description:
+    "Generate videos slides from images and text, Don't break down the slides, provide only the first slide information",
   placement: 'text-to-image',
   tools: [{ functionName: 'loadVoices', output: 'voice id' }],
   dto: ImagesSlidesParams,
@@ -65,7 +68,7 @@ class ImagesSlidesParams {
     !!process.env.ELEVENSLABS_API_KEY &&
     !!process.env.TRANSLOADIT_AUTH &&
     !!process.env.TRANSLOADIT_SECRET &&
-    !!process.env.OPENAI_API_KEY &&
+    textAIConfigured() &&
     !!process.env.FAL_KEY,
 })
 export class ImagesSlides extends VideoAbstract<ImagesSlidesParams> {

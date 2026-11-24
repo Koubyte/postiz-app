@@ -54,6 +54,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
   // Feedback icon component attaches Sentry feedback to a top-bar icon when DSN is present
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const isStudio = pathname === '/studio' || pathname.startsWith('/studio/');
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     setMenuOpen(false);
@@ -101,9 +102,11 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
             <ContinueProvider />
             <div
               className={clsx(
-                'flex flex-col min-h-screen min-w-screen text-newTextColor p-[12px] mobile:p-[8px] mobile:pb-[80px]',
+                'flex flex-col min-w-screen text-newTextColor p-[12px] mobile:p-[8px]',
+                isStudio ? 'min-h-0 overflow-hidden' : 'min-h-screen mobile:pb-[80px]',
                 jakartaSans.className
               )}
+              style={isStudio ? { height: 'var(--studio-viewport-height, 100dvh)' } : undefined}
             >
               <div>{user?.admin ? <Impersonate /> : <div />}</div>
               {user.tier === 'FREE' && isGeneral && billingEnabled ? (
@@ -111,7 +114,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
               ) : (
                 <>
                   <AnnouncementBanner />
-                  <div className="flex-1 flex gap-[8px] mobile:gap-0">
+                  <div className={clsx("flex-1 flex gap-[8px] mobile:gap-0", isStudio && "min-h-0")}>
                     <Support />
                     {menuOpen && (
                       <div
@@ -141,9 +144,9 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex-1 min-w-0 bg-newBgLineColor rounded-[12px] overflow-hidden flex flex-col gap-[1px] blurMe">
+                    <div className={clsx("flex-1 min-w-0 bg-newBgLineColor rounded-[12px] overflow-hidden flex flex-col gap-[1px] blurMe", isStudio && "min-h-0")}>
                       {/* relative: the notifications popup spans this bar on phones */}
-                      <div className="relative flex bg-newBgColorInner h-[80px] mobile:h-[64px] px-[20px] mobile:px-[12px] gap-[12px] items-center">
+                      <div className="relative flex shrink-0 bg-newBgColorInner h-[80px] mobile:h-[64px] px-[20px] mobile:px-[12px] gap-[12px] items-center">
                         <button
                           className="hidden mobile:flex items-center justify-center w-[36px] h-[36px] -ms-[6px] rounded-[8px] text-textItemBlur hover:text-newTextColor hover:bg-boxFocused"
                           onClick={() => setMenuOpen(true)}
@@ -187,7 +190,7 @@ export const LayoutComponent = ({ children }: { children: ReactNode }) => {
                           <NotificationComponent />
                         </div>
                       </div>
-                      <div className="flex flex-1 min-w-0 gap-[1px] mobile:flex-col">
+                      <div className={clsx("flex flex-1 min-w-0 gap-[1px] mobile:flex-col", isStudio && "min-h-0 overflow-hidden")}>
                         {children}
                       </div>
                     </div>

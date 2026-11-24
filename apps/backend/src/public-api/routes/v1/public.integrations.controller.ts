@@ -230,6 +230,26 @@ export class PublicIntegrationsController {
     return this._postsService.createPost(org.id, body, creationMethod);
   }
 
+  @Get('/posts/:id')
+  async getEditablePost(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string
+  ) {
+    const value = await this._postsService.getPost(org.id, id);
+    return {
+      group: value.group,
+      integration: value.integration,
+      settings: value.settings,
+      tags: ((value.posts[0] as any)?.tags || []).map(({ tag }: any) => ({ value: tag.id, label: tag.name })),
+      posts: value.posts.map((post) => ({
+        id: post.id, content: post.content, image: post.image,
+        publishDate: post.publishDate, state: post.state,
+        delay: post.delay, intervalInDays: post.intervalInDays,
+        integration: post.integration,
+      })),
+    };
+  }
+
   @Delete('/posts/:id')
   async deletePost(
     @GetOrgFromRequest() org: Organization,

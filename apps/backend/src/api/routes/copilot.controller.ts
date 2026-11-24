@@ -1,4 +1,11 @@
 import {
+  createTextClient,
+  textAIConfigured,
+  textClientOptions,
+  usesCodex,
+} from '@gitroom/nestjs-libraries/openai/text-provider';
+import { createOpenAI } from '@ai-sdk/openai';
+import {
   Logger,
   Controller,
   Get,
@@ -21,7 +28,10 @@ import { MastraService } from '@gitroom/nestjs-libraries/chat/mastra.service';
 import { Request, Response } from 'express';
 import { RequestContext } from '@mastra/core/di';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
-import { AuthorizationActions, Sections } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import {
+  AuthorizationActions,
+  Sections,
+} from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 
 export type ChannelsContext = {
   integrations: string;
@@ -39,6 +49,20 @@ const copilotCors = () => ({
   credentials: !process.env.NOT_SECURED,
 });
 
+const createTextAdapter = () => {
+  const adapter = new OpenAIAdapter({
+    model: usesCodex() ? 'codex' : 'gpt-4.1',
+    openai: createTextClient(),
+    disableParallelToolCalls: usesCodex(),
+  });
+  // Copilot's newer agent path otherwise defaults to the Responses API.
+  if (usesCodex()) {
+    adapter.getLanguageModel = () =>
+      createOpenAI(textClientOptions()).chat('codex');
+  }
+  return adapter;
+};
+
 @Controller('/copilot')
 export class CopilotController {
   constructor(
@@ -47,21 +71,17 @@ export class CopilotController {
   ) {}
   @Post('/chat')
   chatAgent(@Req() req: Request, @Res() res: Response) {
-    if (
-      process.env.OPENAI_API_KEY === undefined ||
-      process.env.OPENAI_API_KEY === ''
-    ) {
-      Logger.warn('OpenAI API key not set, chat functionality will not work');
-      return;
+    if (!textAIConfigured()) {
+      return res
+        .status(503)
+        .json({ message: 'No text AI provider configured' });
     }
 
     const copilotRuntimeHandler = copilotRuntimeNodeHttpEndpoint({
       endpoint: '/copilot/chat',
       cors: copilotCors(),
       runtime: new CopilotRuntime(),
-      serviceAdapter: new OpenAIAdapter({
-        model: 'gpt-4.1',
-      }),
+      serviceAdapter: createTextAdapter(),
     });
 
     return copilotRuntimeHandler(req, res);
@@ -74,12 +94,10 @@ export class CopilotController {
     @Res() res: Response,
     @GetOrgFromRequest() organization: Organization
   ) {
-    if (
-      process.env.OPENAI_API_KEY === undefined ||
-      process.env.OPENAI_API_KEY === ''
-    ) {
-      Logger.warn('OpenAI API key not set, chat functionality will not work');
-      return;
+    if (!textAIConfigured()) {
+      return res
+        .status(503)
+        .json({ message: 'No text AI provider configured' });
     }
     const mastra = await this._mastraService.mastra();
     const requestContext = new RequestContext<ChannelsContext>();
@@ -105,9 +123,7 @@ export class CopilotController {
       endpoint: '/copilot/agent',
       cors: copilotCors(),
       runtime,
-      serviceAdapter: new OpenAIAdapter({
-        model: 'gpt-4.1',
-      }),
+      serviceAdapter: createTextAdapter(),
     });
 
     return copilotRuntimeHandler(req, res);

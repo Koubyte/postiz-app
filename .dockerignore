@@ -21,3 +21,8 @@ dist
 .git
 .github
 reports
+.env
+.env.*
+!.env.example
+**/auth.json
+**/.codex

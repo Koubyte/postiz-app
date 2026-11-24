@@ -1,0 +1,95 @@
+/* Strategy lives in the studio: the same type, palette and simple mobile controls. */
+.studio-nav-mobile { display:none; }
+#strategy-panel { max-width:980px; margin:24px auto 0; padding-bottom:16px; }
+.strategy-heading h1 { font-size:30px; letter-spacing:-.8px; margin:0 0 8px; }
+.strategy-heading p { margin:0; font-size:14px; }
+.strategy-tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); padding:0 0 12px; margin:24px 0; }
+.strategy-tabs button { min-height:44px; padding:10px 20px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--muted); font-weight:600; }
+.strategy-tabs button[aria-selected="true"] { border-color:#177c56; color:var(--green); background:#08291e; }
+.strategy-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.strategy-section-heading h2,.strategy-campaign-form h2 { font-size:23px; margin:0 0 8px; }
+.strategy-section-heading p { margin:0; }
+.strategy-section-heading>.button { flex-shrink:0; }
+.strategy-status { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+.strategy-status>.notice { flex:1 0 100%; margin:0; }
+.strategy-status>.hint { margin:0; }
+.strategy-progress { width:8px; height:8px; border-radius:50%; background:var(--green); flex-shrink:0; }
+.strategy-summary { font-size:16px; white-space:pre-line; margin-bottom:22px; }
+.strategy-stack { display:grid; gap:16px; }
+.strategy-card { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:22px; margin-bottom:18px; overflow-wrap:anywhere; min-width:0; }
+.strategy-stack>.strategy-card { margin-bottom:0; }
+.strategy-card h3 { font-size:22px; margin:0 0 12px; }
+.strategy-card p { margin-bottom:12px; }
+.strategy-card>p:last-child { margin-bottom:0; }
+.strategy-kicker { color:var(--green); font-size:12px; }
+.strategy-details { margin:12px 0; }
+.strategy-details summary { cursor:pointer; color:var(--muted); min-height:44px; padding:12px 0; }
+.strategy-details label { margin:12px 0; }
+.strategy-sources { padding-left:20px; margin:4px 0 12px; color:var(--muted); font-size:13px; line-height:1.6; }
+.strategy-sources li+li { margin-top:8px; }
+.strategy-check { display:flex; align-items:center; flex-direction:row; gap:10px; font-size:14px; line-height:1.6; }
+.strategy-check input { width:20px; height:20px; min-width:20px; margin:0; accent-color:var(--green); }
+.strategy-empty { padding:32px 24px; border:1px dashed var(--line); border-radius:12px; text-align:center; }
+.strategy-empty h3 { font-size:22px; margin-bottom:12px; }
+.strategy-empty p { color:var(--muted); margin:0 auto; max-width:540px; }
+.strategy-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:18px 0; }
+.strategy-form-grid>label { min-width:0; }
+.strategy-campaign-form>label { margin-top:18px; }
+.strategy-campaign-form input,.strategy-campaign-form select,.strategy-campaign-form textarea,.strategy-details input { font-size:16px; min-width:0; max-width:100%; }
+.strategy-campaign-form textarea { line-height:1.6; }
+.strategy-campaign-form>.hint { margin:16px 0; }
+.strategy-list-title { font-size:24px; margin:28px 0 16px; }
+.strategy-card-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.strategy-card-heading .badge { flex-shrink:0; margin-top:2px; }
+.strategy-campaign-steps { margin:18px 0; padding-left:24px; }
+.strategy-campaign-steps li { padding:0 0 16px 4px; }
+.strategy-campaign-steps li:last-child { padding-bottom:0; }
+.strategy-campaign-steps h4,.strategy-post-list h4 { font-size:17px; margin:0 0 6px; }
+.strategy-campaign-steps p { font-size:14px; margin:0 0 6px; }
+.strategy-campaign-items { display:grid; margin-top:20px; }
+.strategy-campaign-items>div { display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid var(--line); padding:16px 0; }
+.strategy-campaign-items>div:last-child { padding-bottom:0; }
+.strategy-campaign-items p { margin-bottom:6px; }
+.strategy-campaign-items .hint { margin-top:6px; }
+.strategy-campaign-items .button { flex-shrink:0; }
+.strategy-text-list { padding-left:20px; margin:0; }
+.strategy-text-list li { line-height:1.7; margin-bottom:8px; }
+.strategy-text-list li:last-child { margin-bottom:0; }
+.strategy-limitations { background:transparent; color:var(--muted); }
+.strategy-limitations h3 { color:var(--text); font-size:19px; }
+.strategy-channel-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.strategy-metrics { margin:0; }
+.strategy-metrics>div { display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:10px 0; border-top:1px solid var(--line); }
+.strategy-metrics dt { font-size:13px; color:var(--muted); }
+.strategy-metrics dd { margin:0; font-size:18px; font-variant-numeric:tabular-nums; }
+.strategy-metric-note { display:block; margin-top:4px; font-size:11px; line-height:1.5; }
+.strategy-post-list>article { border-top:1px solid var(--line); padding:18px 0; }
+.strategy-post-list>article:last-child { padding-bottom:0; }
+.strategy-warning { color:var(--warning); font-size:13px; }
+@media(max-width:650px) {
+  #strategy-panel { margin-top:18px; }
+  .strategy-heading h1 { font-size:26px; }
+  .strategy-heading p { font-size:13px; }
+  .strategy-tabs { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; margin:20px 0; }
+  .strategy-tabs button { padding:10px 8px; font-size:14px; }
+  .strategy-section-heading { display:block; }
+  .strategy-section-heading>.button { width:100%; margin-top:14px; }
+  .strategy-card { padding:18px 16px; }
+  .strategy-card h3 { font-size:20px; }
+  .strategy-card>.button { width:100%; }
+  .strategy-card-heading { display:block; }
+  .strategy-card-heading .badge { margin:0 0 12px; }
+  .strategy-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .strategy-form-grid>label:last-child { grid-column:1/-1; }
+  .strategy-channel-grid { grid-template-columns:1fr; gap:0; }
+  .strategy-campaign-items>div { display:block; }
+  .strategy-campaign-items .button { width:100%; margin-top:8px; }
+  .strategy-empty { padding:28px 16px; }
+}
+@media(max-width:450px) {
+  .strategy-form-grid { grid-template-columns:minmax(0,1fr); }
+  .postiz-navigation { display:flex; overflow:visible; gap:2px; padding-left:6px; padding-right:6px; }
+  .postiz-navigation a { flex:1 1 0; min-width:0; padding:6px 2px; font-size:12px; }
+  .studio-nav-desktop { display:none; }
+  .studio-nav-mobile { display:inline; }
+}

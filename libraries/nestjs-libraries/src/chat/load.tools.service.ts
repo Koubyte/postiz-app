@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Agent } from '@mastra/core/agent';
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI, openai } from '@ai-sdk/openai';
+import {
+  textClientOptions,
+  usesCodex,
+} from '@gitroom/nestjs-libraries/openai/text-provider';
 import { Memory } from '@mastra/memory';
 import { pStore } from '@gitroom/nestjs-libraries/chat/mastra.store';
 import { array, object, string } from 'zod';
@@ -113,7 +117,9 @@ export class LoadToolsService {
       )}
 `;
       },
-      model: openai('gpt-5.2'),
+      model: usesCodex()
+        ? createOpenAI(textClientOptions()).chat('codex')
+        : openai('gpt-5.2'),
       tools,
       memory: new Memory({
         storage: pStore,

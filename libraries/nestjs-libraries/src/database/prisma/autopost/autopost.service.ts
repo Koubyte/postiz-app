@@ -1,3 +1,9 @@
+import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
+import {
+  textModelOptions,
+  usesCodexImages,
+  generateCodexImage,
+} from '@gitroom/nestjs-libraries/openai/text-provider';
 import { Injectable } from '@nestjs/common';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { AutopostDto } from '@gitroom/nestjs-libraries/dtos/autopost/autopost.dto';
@@ -16,9 +22,7 @@ import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/in
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { TemporalService } from 'nestjs-temporal-core';
 import { TypedSearchAttributes } from '@temporalio/common';
-import {
-  organizationId,
-} from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
+import { organizationId } from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
 const parser = new Parser();
 
 interface WorkflowChannelsState {
@@ -36,8 +40,7 @@ interface WorkflowChannelsState {
 }
 
 const model = new ChatOpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'sk-proj-',
-  model: 'gpt-4.1',
+  ...textModelOptions('gpt-4.1'),
   temperature: 0.7,
 });
 
@@ -262,7 +265,11 @@ export class AutopostService {
           content: state.load.description || state.description,
         });
 
-    const image = await dalle.invoke(generatedTextToBeSentToDallE);
+    const image = usesCodexImages()
+      ? await UploadFactory.createStorage().uploadSimple(
+          await generateCodexImage(generatedTextToBeSentToDallE)
+        )
+      : await dalle.invoke(generatedTextToBeSentToDallE);
 
     return { ...state, image };
   }
